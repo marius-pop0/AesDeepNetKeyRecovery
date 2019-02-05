@@ -1,18 +1,31 @@
 import pandas as pd
 import trsfile
 import binascii
+import pyDes
 
-with trsfile.open('HWDES50000Traces.trs', 'r') as traces:
+key = bytes.fromhex('deacbeeecafebabe')
+
+tmpdata = bytes.fromhex('2313fd389fcdab92')
+k = pyDes.des(key,pyDes.ECB)
+d,sbox_out = k.encrypt(tmpdata)
+print(binascii.hexlify(d).decode('utf-8'))
+print(sbox_out)
+HW_r1 = 0
+#Round 1 HW
+for i in sbox_out[0]:
+    if i == 1:
+        HW_r1 += 1
+print(HW_r1)
+
+with trsfile.open('HWDES+Harmonic+Resample+StaticAlign+PoiSelection.trs', 'r') as traces:
     # Show all headers
     for header, value in traces.get_headers().items():
         print(header, '=', value)
 
     df_traces = pd.DataFrame()
     df_data = pd.DataFrame()
-
     # Iterate over the traces
-    for i, trace in enumerate(traces):
-
+    for i, trace in enumerate(traces[0:5]):
         # Print Trace and Info
         # print(pd.DataFrame([trace.samples]))
         # print('Trace {0:d} contains {1:d} samples'.format(i, len(trace)))
