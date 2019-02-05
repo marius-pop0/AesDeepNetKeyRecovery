@@ -2,10 +2,10 @@ import pandas as pd
 import numpy as np
 import trsfile
 import binascii
-import pyDes
+import pyDesLoc
 
 key = bytes.fromhex('deacbeeecafebabe')
-k = pyDes.des(key, pyDes.ECB)
+k = pyDesLoc.des(key, pyDesLoc.ECB)
 
 with trsfile.open('HWDES+Harmonic+Resample+StaticAlign+PoiSelection.trs', 'r') as traces:
     # Show all headers
