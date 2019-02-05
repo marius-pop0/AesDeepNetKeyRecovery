@@ -652,7 +652,7 @@ class des(_baseDes):
 
 		# Return the full crypted string
 		if _pythonMajorVersion < 3:
-			return ''.join(result)
+			return ''.join(result), sbox_in_all, sbox_out_all, r_in, r_out
 		else:
 			return bytes.fromhex('').join(result), sbox_in_all, sbox_out_all, r_in, r_out
 
