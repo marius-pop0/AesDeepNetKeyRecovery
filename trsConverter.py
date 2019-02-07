@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import trsfile
 import binascii
-import pyDesLoc
+import des
 import aes
 
 # Modify to be taken as args
@@ -11,13 +11,12 @@ AES: int = 1
 # Keys for each algorithm
 key_a = 'deadbeef01234567cafebabe89abcdef'
 key_d = bytes.fromhex('deacbeeecafebabe')
-filename = 'AES + StaticAlign + LowPass + POI.trs'
+filename = 'HWDES+Harmonic+Resample+StaticAlign+PoiSelection.trs'
 # Alg class instantiation
-k = pyDesLoc.des(key_d, pyDesLoc.ECB)
+k = des.des(key_d, des.ECB)
 a = aes.AES(mode='ecb', input_type='hex')
 
-ALG = AES
-#
+ALG = DES
 
 with trsfile.open(filename, 'r') as traces:
     # Show all headers
@@ -107,9 +106,9 @@ with trsfile.open(filename, 'r') as traces:
                 sbox_xor_r1[i] = int(sbox_in[0][i], 16) ^ int(sbox_out[0][i], 16)
                 HD_r1_sbox += bin(sbox_xor_r1[i])[2:].zfill(8).count("1")
 
-        # print("SboxHW:{}, SboxHD:{}, RoundHW:{}, RoundHD:{}".format(HW_r1_sbox, HD_r1_sbox))
-        # save the data to a data frame (Plaintext, Ciphertext, HW-Sbox, HD-Sbox)
-        df_data = df_data.append(pd.DataFrame([[data[0:32], data[32:64], HW_r1_sbox, HD_r1_sbox]]), ignore_index=True)
+            # print("SboxHW:{}, SboxHD:{}, RoundHW:{}, RoundHD:{}".format(HW_r1_sbox, HD_r1_sbox))
+            # save the data to a data frame (Plaintext, Ciphertext, HW-Sbox, HD-Sbox)
+            df_data = df_data.append(pd.DataFrame([[data[0:32], data[32:64], HW_r1_sbox, HD_r1_sbox]]), ignore_index=True)
 
     # insert plaintext at the from of the dataframe
     df_traces.insert(loc=0, column='pt', value=df_data[0])
