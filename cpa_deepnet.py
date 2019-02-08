@@ -45,7 +45,8 @@ hw = np.array([bin(x).count("1") for x in range(256)])
 def load_traces(database_file, start_at=0, number_samples=0):
     traces = np.loadtxt(database_file, delimiter=',', dtype=np.float64, skiprows=1,
                         usecols=range(start_at, number_samples))
-    inputoutput = np.loadtxt(database_file, delimiter=',', dtype=np.str, skiprows=1, usecols=start_at+number_samples-1)
+    inputoutput = np.loadtxt(database_file, delimiter=',', dtype=np.str, skiprows=1,
+                             usecols=start_at + number_samples - 1)
     # print("traces shape: {}\ninputoutput shape: {}\n".format(traces.shape, inputoutput.shape))
     return traces, inputoutput
 
@@ -79,6 +80,7 @@ def statcorrect_traces(dataset):
         return traces_statcorrect, inputoutput, labels
 
 
+# noinspection PyShadowingNames
 def split_data_percentage(dataset, training_fraction=0.5):
     if len(dataset) == 2:
         traces, inputoutput = dataset
@@ -119,8 +121,8 @@ def create_model(classes=9, number_samples=200):
         trace_input)
     x = MaxPooling1D(pool_size=1, strides=1, padding='valid', name='block1_pool')(x)
     x = Flatten(name='flatten')(x)
-    x = Dense(50, activation='tanh', name='fc1')(x)
-    x = Dense(50, activation='tanh', name='fc2')(x)
+    x = Dense(50, activation='relu', name='fc1')(x)
+    x = Dense(50, activation='relu', name='fc2')(x)
     x = Dense(classes, activation='softmax', name='predictions')(x)
 
     model = Model(trace_input, x, name='cnn')
@@ -132,10 +134,9 @@ def create_model(classes=9, number_samples=200):
 if __name__ == '__main__':
 
     if 'dataset' not in locals():
-        # dataset = load_traces('F://dpa4//dpa_contest_v4_40k_full.trs', 228405-100, 200)
         dataset = load_traces('traceSWAES.csv', 1, 326)
 
-        # dataset = statcorrect_traces(dataset)
+        dataset = statcorrect_traces(dataset)
         # dataset = shorten_traces(dataset, 228405-100, 200)
 
         # Args: Dataset, Byte to Attack, Subkey[Bayte] of last round
@@ -157,40 +158,42 @@ if __name__ == '__main__':
         traces_test_reshaped = traces_test.reshape((traces_test.shape[0], traces_test.shape[1], 1))
         labels_test_categorical = to_categorical(labels_test, num_classes=classes)
 
-        save_model = ModelCheckpoint('model_epoch{epoch}.h5', period=10)
+        save_model = ModelCheckpoint('model_epoch{epoch}.h5', period=100)
+
 
         class CalculateRecall(Callback):
             def __init__(self, data, labels, message_prefix=None):
                 self.data = data
                 self.labels = labels
-                self.message_prefix = message_prefix+' ' or ''
+                self.message_prefix = message_prefix + ' ' or ''
 
             def on_epoch_end(self, epoch, logs=None):
                 logs = logs or {}
 
                 predictions = self.model.predict(self.data)
-                correctly_classified = (np.argmax(predictions, axis=1)==self.labels)
+                correctly_classified = (np.argmax(predictions, axis=1) == self.labels)
                 _sum = 0.
                 for i in np.unique(self.labels):
-                    n_correct = len(np.nonzero(correctly_classified[ np.where(self.labels==i)[0] ])[0])
-                    n_total = len(np.where(self.labels==i)[0])
-                    _sum += n_correct/n_total
-                recall = _sum/len(np.unique(self.labels))
+                    n_correct = len(np.nonzero(correctly_classified[np.where(self.labels == i)[0]])[0])
+                    n_total = len(np.where(self.labels == i)[0])
+                    _sum += n_correct / n_total
+                recall = _sum / len(np.unique(self.labels))
 
-                print(self.message_prefix+'recall:', recall)
+                print(self.message_prefix + 'recall:', recall)
+
 
         calculate_recall_train = CalculateRecall(traces_train_reshaped, labels_train, 'train')
         calculate_recall_test = CalculateRecall(traces_test_reshaped, labels_test, 'test')
-        callbacks=[calculate_recall_train, calculate_recall_test, save_model]
+        callbacks = [calculate_recall_train, calculate_recall_test, save_model]
 
         model = create_model(classes=classes, number_samples=traces_train.shape[1])
 
         history = model.fit(x=traces_train_reshaped,
-                         y=labels_train_categorical,
-                         batch_size = 500,
-                         verbose = 1,
-                         epochs = 100,
-                         class_weight = class_weight.compute_class_weight('balanced', np.unique(labels_train), labels_train),
-                         validation_data=(traces_test_reshaped, labels_test_categorical),
-                         callbacks=callbacks)
-
+                            y=labels_train_categorical,
+                            batch_size=100,
+                            verbose=1,
+                            epochs=1500,
+                            class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
+                                                                           labels_train),
+                            validation_data=(traces_test_reshaped, labels_test_categorical),
+                            callbacks=callbacks)
