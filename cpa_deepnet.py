@@ -7,6 +7,7 @@ from keras.layers import Flatten, Dense, Input, Conv1D, MaxPooling1D
 from keras.regularizers import l1_l2
 from keras.utils import to_categorical
 from keras.callbacks import Callback, ModelCheckpoint
+import matplotlib.pyplot as plt
 
 AES_Sbox = np.array(
     [0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76, 0xCA, 0x82, 0xC9,
@@ -140,60 +141,80 @@ if __name__ == '__main__':
         # dataset = shorten_traces(dataset, 228405-100, 200)
 
         # Args: Dataset, Byte to Attack, Subkey[Bayte] of last round
-        dataset = create_labels_sboxinputkey(dataset, 0, 0x3c)
-        dataset = split_data_percentage(dataset, training_fraction=0.9)
-        (traces_train, traces_test), (inputoutput_train, inputoutput_test), (labels_train, labels_test) = dataset
+        test_accuracy = np.zeros(255)
+        for i in range(255):
+            dataset_keyhype = create_labels_sboxinputkey(dataset, 0, i)
+            dataset_keyhype = split_data_percentage(dataset_keyhype, training_fraction=0.85)
+            (traces_train, traces_test), (inputoutput_train, inputoutput_test), (labels_train, labels_test) = dataset_keyhype
 
-        print(traces_train.shape, traces_train.dtype)
-        print(traces_test.shape, traces_test.dtype)
-        print(inputoutput_train.shape, inputoutput_train.dtype)
-        print(inputoutput_test.shape, inputoutput_test.dtype)
-        print(labels_train.shape, labels_train.dtype)
-        print(labels_test.shape, labels_test.dtype)
-        print(labels_train[0])
+            print("Key Hypothesis: {}".format(i))
+            print(traces_train.shape, traces_train.dtype)
+            print(traces_test.shape, traces_test.dtype)
+            print(inputoutput_train.shape, inputoutput_train.dtype)
+            print(inputoutput_test.shape, inputoutput_test.dtype)
+            print(labels_train.shape, labels_train.dtype)
+            print(labels_test.shape, labels_test.dtype)
+            print(labels_train[0])
 
-        classes = len(np.unique(labels_train))
-        traces_train_reshaped = traces_train.reshape((traces_train.shape[0], traces_train.shape[1], 1))
-        labels_train_categorical = to_categorical(labels_train, num_classes=classes)
-        traces_test_reshaped = traces_test.reshape((traces_test.shape[0], traces_test.shape[1], 1))
-        labels_test_categorical = to_categorical(labels_test, num_classes=classes)
+            min_class_tr = int(np.min(labels_train))
+            min_class_ts = int(np.min(labels_test))
+            classes = max(len(np.unique(labels_train)) + min_class_tr, len(np.unique(labels_test)) + min_class_ts)
+            classes = 9
 
-        save_model = ModelCheckpoint('model_epoch{epoch}.h5', period=100)
+            traces_train_reshaped = traces_train.reshape((traces_train.shape[0], traces_train.shape[1], 1))
+            labels_train_categorical = to_categorical(labels_train, num_classes=classes)
+            traces_test_reshaped = traces_test.reshape((traces_test.shape[0], traces_test.shape[1], 1))
+            labels_test_categorical = to_categorical(labels_test, num_classes=classes)
 
-
-        class CalculateRecall(Callback):
-            def __init__(self, data, labels, message_prefix=None):
-                self.data = data
-                self.labels = labels
-                self.message_prefix = message_prefix + ' ' or ''
-
-            def on_epoch_end(self, epoch, logs=None):
-                logs = logs or {}
-
-                predictions = self.model.predict(self.data)
-                correctly_classified = (np.argmax(predictions, axis=1) == self.labels)
-                _sum = 0.
-                for i in np.unique(self.labels):
-                    n_correct = len(np.nonzero(correctly_classified[np.where(self.labels == i)[0]])[0])
-                    n_total = len(np.where(self.labels == i)[0])
-                    _sum += n_correct / n_total
-                recall = _sum / len(np.unique(self.labels))
-
-                print(self.message_prefix + 'recall:', recall)
+            save_model = ModelCheckpoint('model_epoch{epoch}.h5', period=100)
 
 
-        calculate_recall_train = CalculateRecall(traces_train_reshaped, labels_train, 'train')
-        calculate_recall_test = CalculateRecall(traces_test_reshaped, labels_test, 'test')
-        callbacks = [calculate_recall_train, calculate_recall_test, save_model]
+            class CalculateRecall(Callback):
+                def __init__(self, data, labels, message_prefix=None):
+                    self.data = data
+                    self.labels = labels
+                    self.message_prefix = message_prefix + ' ' or ''
 
-        model = create_model(classes=classes, number_samples=traces_train.shape[1])
+                def on_epoch_end(self, epoch, logs=None):
+                    logs = logs or {}
 
-        history = model.fit(x=traces_train_reshaped,
-                            y=labels_train_categorical,
-                            batch_size=100,
-                            verbose=1,
-                            epochs=1500,
-                            class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
-                                                                           labels_train),
-                            validation_data=(traces_test_reshaped, labels_test_categorical),
-                            callbacks=callbacks)
+                    predictions = self.model.predict(self.data)
+                    correctly_classified = (np.argmax(predictions, axis=1) == self.labels)
+                    _sum = 0.
+                    for i in np.unique(self.labels):
+                        n_correct = len(np.nonzero(correctly_classified[np.where(self.labels == i)[0]])[0])
+                        n_total = len(np.where(self.labels == i)[0])
+                        _sum += n_correct / n_total
+                    recall = _sum / len(np.unique(self.labels))
+
+                    print(self.message_prefix + 'recall:', recall)
+
+
+            calculate_recall_train = CalculateRecall(traces_train_reshaped, labels_train, 'train')
+            calculate_recall_test = CalculateRecall(traces_test_reshaped, labels_test, 'test')
+            callbacks = [calculate_recall_train, calculate_recall_test, save_model]
+
+            model = create_model(classes=classes, number_samples=traces_train.shape[1])
+
+            history = model.fit(x=traces_train_reshaped,
+                                y=labels_train_categorical,
+                                batch_size=100,
+                                verbose=1,
+                                epochs=200,
+                                class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
+                                                                               labels_train),
+                                validation_data=(traces_test_reshaped, labels_test_categorical),
+                                callbacks=callbacks)
+
+            t = model.evaluate(x=traces_test_reshaped,
+                               y=labels_test_categorical,
+                               verbose=1)
+
+            test_accuracy[i] = t[1]
+
+        idx = np.argmax(test_accuracy)
+        #best_accuracy = test_accuracy[idx]
+        print(idx)
+        plt.bar(range(255), test_accuracy)
+        plt.show()
+
