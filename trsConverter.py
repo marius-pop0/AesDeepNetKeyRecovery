@@ -94,7 +94,9 @@ with trsfile.open(filename, 'r') as traces:
             #     pd.DataFrame([[data[0:16], data[16:32], HW_r1_sbox, HD_r1_sbox, HW_r1_rOut, HD_r1_round]]),
             #     ignore_index=True)
             df_data = df_data.append(
-                pd.DataFrame([[data[0:16], data[16:32], HD_r1_round_b]]), ignore_index=True)
+                pd.DataFrame([[data[0:16], data[16:32], HD_r1_round_b[0], HD_r1_round_b[1], HD_r1_round_b[2],
+                               HD_r1_round_b[3], HD_r1_round_b[4], HD_r1_round_b[5], HD_r1_round_b[6], HD_r1_round_b[7]]
+                              ]), ignore_index=True)
         else:
             # Compute AES intermediate values
             d, sbox_in, sbox_out = a.encryption(data[0:32], key_a)
@@ -123,7 +125,14 @@ with trsfile.open(filename, 'r') as traces:
         df_traces['round1HW_SboxOut'] = df_data[2]
         df_traces['round1HD_SboxOut'] = df_data[3]
     if ALG == DES:
-        df_traces['round1HD_RoundOut'] = df_data[2]
+        df_traces['round1HD_RoundOut_b0'] = df_data[2]
+        df_traces['round1HD_RoundOut_b1'] = df_data[3]
+        df_traces['round1HD_RoundOut_b2'] = df_data[4]
+        df_traces['round1HD_RoundOut_b3'] = df_data[5]
+        df_traces['round1HD_RoundOut_b4'] = df_data[6]
+        df_traces['round1HD_RoundOut_b5'] = df_data[7]
+        df_traces['round1HD_RoundOut_b6'] = df_data[8]
+        df_traces['round1HD_RoundOut_b7'] = df_data[9]
 
 
     # Sort by column name
