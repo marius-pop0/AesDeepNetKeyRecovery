@@ -58,37 +58,43 @@ with trsfile.open(filename, 'r') as traces:
 
             # Round 1 HW -> Sbox_Out
             HW_r1_sbox = 0
-            for i in sbox_out[0]:
-                if i == 1:
-                    HW_r1_sbox += 1
+            HW_r1_sbox_b = []
+            HW_r1_sbox = sum(sbox_out[0])
+            for b in range(0, len(sbox_out[0]), 8):
+                HW_r1_sbox_b.append(sum(sbox_out[0][b:b+8]))
 
             # Round 1 HD -> Sbox_In XOR Sbox_Out
             HD_r1_sbox = 0
+            HD_r1_sbox_b = []
             sbox_xor_r1 = np.bitwise_xor(sbox_in[0], sbox_out[0])
-            for i in sbox_xor_r1:
-                if i == 1:
-                    HD_r1_sbox += 1
+            HD_r1_sbox = sum(sbox_xor_r1)
+            for b in range(0, len(sbox_xor_r1), 8):
+                HD_r1_sbox_b.append(sum(sbox_xor_r1[b:b + 8]))
+
 
             # Round 1 HW -> Round_Out
             HW_r1_rOut = 0
-            for i in r_out[0]:
-                if i == 1:
-                    HW_r1_rOut += 1
+            HW_r1_rOut_b = []
+            HW_r1_rOut = sum(r_out[0])
+            for b in range(0, len(r_out[0]), 8):
+                HW_r1_rOut_b.append(sum(r_out[0][b:b+8]))
 
             # Round 1 HD -> Round_In XOR Round_Out
             HD_r1_round = 0
+            HD_r1_round_b = []
             r_xor_r1 = np.bitwise_xor(r_in[0], r_out[0])
-            for i in r_xor_r1:
-                if i == 1:
-                    HD_r1_round += 1
+            HD_r1_round = sum(r_xor_r1)
+            for b in range(0, len(r_xor_r1), 8):
+                HD_r1_round_b.append(sum(r_xor_r1[b:b+8]))
 
             # print("SboxHW:{}, SboxHD:{}, RoundHW:{}, RoundHD:{}".format(HW_r1_sbox, HD_r1_sbox, HW_r1_rOut,
             # HD_r1_round))
             # save the data to a data frame (Plaintext, HW-Round, HD-Round, HW-Sbox, HD-Sbox)
+            # df_data = df_data.append(
+            #     pd.DataFrame([[data[0:16], data[16:32], HW_r1_sbox, HD_r1_sbox, HW_r1_rOut, HD_r1_round]]),
+            #     ignore_index=True)
             df_data = df_data.append(
-                pd.DataFrame([[data[0:16], data[16:32], HW_r1_sbox, HD_r1_sbox, HW_r1_rOut, HD_r1_round]]),
-                ignore_index=True)
-
+                pd.DataFrame([[data[0:16], data[16:32], HD_r1_round_b]]), ignore_index=True)
         else:
             # Compute AES intermediate values
             d, sbox_in, sbox_out = a.encryption(data[0:32], key_a)
@@ -113,11 +119,12 @@ with trsfile.open(filename, 'r') as traces:
     # insert plaintext at the from of the dataframe
     df_traces.insert(loc=0, column='pt', value=df_data[0])
     df_traces['ct'] = df_data[1]
-    df_traces['round1HW_SboxOut'] = df_data[2]
-    df_traces['round1HD_SboxOut'] = df_data[3]
+    if ALG == AES:
+        df_traces['round1HW_SboxOut'] = df_data[2]
+        df_traces['round1HD_SboxOut'] = df_data[3]
     if ALG == DES:
-        df_traces['round1HW_RoundOut'] = df_data[4]
-        df_traces['round1HD_RoundOut'] = df_data[5]
+        df_traces['round1HD_RoundOut'] = df_data[2]
+
 
     # Sort by column name
     # df_traces = df_traces.sort_values('round1_SboxOut')
