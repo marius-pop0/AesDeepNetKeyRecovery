@@ -48,7 +48,7 @@ def load_traces(database_file, start_at=0, number_samples=0):
     traces = np.loadtxt(database_file, delimiter=',', dtype=np.float64, skiprows=1,
                         usecols=range(start_at, number_samples))
     inputoutput = np.loadtxt(database_file, delimiter=',', dtype=np.str, skiprows=1,
-                             usecols=start_at + number_samples - 1)
+                             usecols=start_at - 1)
     # print("traces shape: {}\ninputoutput shape: {}\n".format(traces.shape, inputoutput.shape))
     return traces, inputoutput
 
@@ -111,11 +111,12 @@ def create_labels_sboxinputkey(dataset, input_index=0, static_key=0):
 
     labels = np.zeros(inputoutput.shape)
     for i, v in enumerate(inputoutput):
-        labels[i] = hw[AES_inv_Sbox[bytes.fromhex(v)[input_index] ^ static_key]]
+        labels[i] = hw[AES_Sbox[bytes.fromhex(v)[input_index] ^ static_key]]
 
     return traces, inputoutput, labels
 
 
+# use for hamming weight leakage model
 def create_model(classes=9, number_samples=200):
     input_shape = (number_samples, 1)
     trace_input = Input(shape=input_shape)
@@ -123,8 +124,39 @@ def create_model(classes=9, number_samples=200):
         trace_input)
     x = MaxPooling1D(pool_size=1, strides=1, padding='valid', name='block1_pool')(x)
     x = Flatten(name='flatten')(x)
-    x = Dense(50, activation='relu', name='fc1')(x)
-    x = Dense(50, activation='relu', name='fc2')(x)
+    x = Dense(50, activation='tanh', name='fc1')(x)
+    x = Dense(50, activation='tanh', name='fc2')(x)
+    x = Dense(classes, activation='softmax', name='predictions')(x)
+
+    model = Model(trace_input, x, name='cnn')
+    optimizer = SGD(lr=0.01, decay=0, momentum=0, nesterov=True)
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    return model
+
+
+# use for bit leakage model
+def create_big_model(classes=256, number_samples=200):
+    input_shape = (number_samples, 1)
+    trace_input = Input(shape=input_shape)
+    # Block 1
+    x = Conv1D(filters=64, kernel_size=10, strides=10, activation='relu', padding='same', name='block1_conv1')(
+        trace_input)
+    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block1_pool')(x)
+    # Block 2
+    x = Conv1D(filters=128, kernel_size=10, strides=10, activation='relu', padding='same', name='block2_conv1')(
+        x)
+    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block2_pool')(x)
+    # Block 3
+    x = Conv1D(filters=256, kernel_size=10, strides=10, activation='relu', padding='same', name='block3_conv1')(
+        x)
+    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block3_pool')(x)
+    # Block 4
+    x = Conv1D(filters=512, kernel_size=10, strides=10, activation='relu', padding='same', name='block4_conv1')(
+        x)
+    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block4_pool')(x)
+    x = Flatten(name='flatten')(x)
+    x = Dense(50, activation='tanh', name='fc1')(x)
+    x = Dense(50, activation='tanh', name='fc2')(x)
     x = Dense(classes, activation='softmax', name='predictions')(x)
 
     model = Model(trace_input, x, name='cnn')
@@ -141,21 +173,24 @@ if __name__ == '__main__':
         dataset = statcorrect_traces(dataset)
         # dataset = shorten_traces(dataset, 228405-100, 200)
 
-        # Args: Dataset, Byte to Attack, Subkey[Bayte] of last round
-        test_accuracy = np.zeros(255)
-        for i in range(255):
-            dataset_keyhype = create_labels_sboxinputkey(dataset, 0, i)
+        # Args: Dataset, Byte to Attack, Subkey[Bayte] of first round
+        test_acc = np.zeros(16)
+        key = 'DEADBEEF01234567CAFEBABE89ABCDEF'
+        for i in range(16):
+            rk = key[i * 2:i * 2 + 2]
+            dataset_keyhype = create_labels_sboxinputkey(dataset, i, int(rk, 16))  # Template - Use known SubKey byte
             dataset_keyhype = split_data_percentage(dataset_keyhype, training_fraction=0.85)
-            (traces_train, traces_test), (inputoutput_train, inputoutput_test), (labels_train, labels_test) = dataset_keyhype
+            (traces_train, traces_test), (inputoutput_train, inputoutput_test), (
+            labels_train, labels_test) = dataset_keyhype
 
-            print("Key Hypothesis: {}".format(i))
-            print(traces_train.shape, traces_train.dtype)
-            print(traces_test.shape, traces_test.dtype)
-            print(inputoutput_train.shape, inputoutput_train.dtype)
-            print(inputoutput_test.shape, inputoutput_test.dtype)
-            print(labels_train.shape, labels_train.dtype)
-            print(labels_test.shape, labels_test.dtype)
-            print(labels_train[0])
+            print("<------------------Using byte: {} with subkey: {}------------------>".format(i, rk))
+            # print(traces_train.shape, traces_train.dtype)
+            # print(traces_test.shape, traces_test.dtype)
+            # print(inputoutput_train.shape, inputoutput_train.dtype)
+            # print(inputoutput_test.shape, inputoutput_test.dtype)
+            # print(labels_train.shape, labels_train.dtype)
+            # print(labels_test.shape, labels_test.dtype)
+            # print(labels_train[0])
 
             min_class_tr = int(np.min(labels_train))
             min_class_ts = int(np.min(labels_test))
@@ -200,8 +235,8 @@ if __name__ == '__main__':
             history = model.fit(x=traces_train_reshaped,
                                 y=labels_train_categorical,
                                 batch_size=100,
-                                verbose=1,
-                                epochs=200,
+                                verbose=0,
+                                epochs=250,
                                 class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
                                                                                labels_train),
                                 validation_data=(traces_test_reshaped, labels_test_categorical),
@@ -209,13 +244,8 @@ if __name__ == '__main__':
 
             t = model.evaluate(x=traces_test_reshaped,
                                y=labels_test_categorical,
-                               verbose=1)
+                               verbose=0)
 
-            test_accuracy[i] = t[1]
+            test_acc[i] = t[1]
 
-        idx = np.argmax(test_accuracy)
-        #best_accuracy = test_accuracy[idx]
-        print(idx)
-        plt.bar(range(255), test_accuracy)
-        plt.show()
-
+        print(test_acc)
