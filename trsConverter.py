@@ -103,16 +103,22 @@ with trsfile.open(filename, 'r') as traces:
 
             # Round 1 HW -> Sbox_Out
             HW_r1_sbox = 0
+            HW_r1_sbox_b = []
             for i in sbox_out[0]:
-                HW_r1_sbox += bin(int(i, 16))[2:].zfill(8).count("1")
+                hw = bin(int(i, 16))[2:].zfill(8).count("1")
+                HW_r1_sbox += hw
+                HW_r1_sbox_b.append(hw)
 
             # Round 1 HD -> Sbox_In XOR Sbox_Out
             HD_r1_sbox = 0
+            HD_r1_sbox_b = []
             sbox_xor_r1 = [None]*16
             # Bitwise Xor between intermediate values
             for i in range(0, 16):
                 sbox_xor_r1[i] = int(sbox_in[0][i], 16) ^ int(sbox_out[0][i], 16)
-                HD_r1_sbox += bin(sbox_xor_r1[i])[2:].zfill(8).count("1")
+                hd = bin(sbox_xor_r1[i])[2:].zfill(8).count("1")
+                HD_r1_sbox += hd
+                HD_r1_sbox_b.append(hd)
 
             # print("SboxHW:{}, SboxHD:{}, RoundHW:{}, RoundHD:{}".format(HW_r1_sbox, HD_r1_sbox))
             # save the data to a data frame (Plaintext, Ciphertext, HW-Sbox, HD-Sbox)

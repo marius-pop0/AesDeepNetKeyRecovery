@@ -197,9 +197,9 @@ if __name__ == '__main__':
 
             history = model.fit(x=traces_train_reshaped,
                                 y=labels_train_categorical,
-                                batch_size=15000,
+                                batch_size=10000,
                                 verbose=0,
-                                epochs=250,
+                                epochs=400,
                                 class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
                                                                                labels_train),
                                 validation_data=(traces_test_reshaped, labels_test_categorical),
