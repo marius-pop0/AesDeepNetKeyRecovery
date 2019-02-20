@@ -142,7 +142,7 @@ if __name__ == '__main__':
         # Args: Dataset, Byte to Attack, Subkey[Bayte] of first round
         test_acc = np.zeros(8)
         for i in range(8):
-            datasetLeak = create_labels_rOut(dataset, 'traceHWDES.csv', 72, i)  # Template - Use known SubKey byte
+            datasetLeak = create_labels_rOut(dataset, 'traceHWDES.csv', 72, i)  # Template - Use calculated inter values
             datasetLeak = split_data_percentage(datasetLeak, training_fraction=0.85)
             (traces_train, traces_test), (inputoutput_train, inputoutput_test), (labels_train, labels_test) = datasetLeak
 
@@ -197,9 +197,9 @@ if __name__ == '__main__':
 
             history = model.fit(x=traces_train_reshaped,
                                 y=labels_train_categorical,
-                                batch_size=10000,
+                                batch_size=3000,
                                 verbose=0,
-                                epochs=400,
+                                epochs=800,
                                 class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
                                                                                labels_train),
                                 validation_data=(traces_test_reshaped, labels_test_categorical),

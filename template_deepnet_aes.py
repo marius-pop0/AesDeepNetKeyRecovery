@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import sys
 from sklearn.utils import class_weight
 from keras import backend as K
@@ -9,6 +10,7 @@ from keras.regularizers import l1_l2
 from keras.utils import to_categorical
 from keras.callbacks import Callback, ModelCheckpoint
 import matplotlib.pyplot as plt
+
 
 AES_Sbox = np.array(
     [0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76, 0xCA, 0x82, 0xC9,
@@ -44,76 +46,101 @@ AES_inv_Sbox = np.array(
 hw = np.array([bin(x).count("1") for x in range(256)])
 
 
-def load_traces(database_file, start_at=0, number_samples=0):
+def load_traces(database_file, start_at=1, number_samples=0, n_features=1):
+    # Power Consumption Start_at -> Start_at + Number_Samples
     traces = np.loadtxt(database_file, delimiter=',', dtype=np.float64, skiprows=1,
-                        usecols=range(start_at, number_samples))
+                        usecols=range(start_at, min(start_at + number_samples, n_features)))
+    # Plaintext Start_at - 1
     inputoutput = np.loadtxt(database_file, delimiter=',', dtype=np.str, skiprows=1,
                              usecols=start_at - 1)
+    # Chiphertext Start_at + Number_Samples
+    # Key Start_at + Number_Samples + 1
+    key = np.loadtxt(database_file, delimiter=',', dtype=np.str, skiprows=1,
+                             usecols=start_at + number_samples + 1)
     # print("traces shape: {}\ninputoutput shape: {}\n".format(traces.shape, inputoutput.shape))
-    return traces, inputoutput
+    return traces, inputoutput, key
 
 
-def shorten_traces(dataset, start_at=0, number_samples=0):
-    if len(dataset) == 2:
-        traces, inputoutput = dataset
-    elif len(dataset) == 3:
-        traces, inputoutput, labels = dataset
-
-    traces_selected = traces[start_at:start_at + number_samples]
-
-    if len(dataset) == 2:
-        return traces_selected, inputoutput
-    elif len(dataset) == 3:
-        return traces_selected, inputoutput, labels
+# def shorten_traces(dataset, start_at=0, number_samples=0):
+#     if len(dataset) == 3:
+#         traces, inputoutput, key = dataset
+#     elif len(dataset) == 4:
+#         traces, inputoutput, key, labels = dataset
+#
+#     traces_selected = traces[start_at:start_at + number_samples]
+#
+#     if len(dataset) == 3:
+#         return traces_selected, inputoutput, key
+#     elif len(dataset) == 4:
+#         return traces_selected, inputoutput, key, labels
 
 
 def statcorrect_traces(dataset):
-    if len(dataset) == 2:
-        traces, inputoutput = dataset
-    elif len(dataset) == 3:
-        traces, inputoutput, labels = dataset
+    if len(dataset) == 3:
+        traces, inputoutput, key = dataset
+    elif len(dataset) == 4:
+        traces, inputoutput, key, labels = dataset
 
     # traces_statcorrect = (traces - np.mean(traces, axis=1).reshape(-1,1))/np.std(traces, axis=1).reshape(-1,1)
     traces_statcorrect = (traces - np.mean(traces, axis=0).reshape(1, -1)) / np.std(traces, axis=0).reshape(1, -1)
 
-    if len(dataset) == 2:
-        return traces_statcorrect, inputoutput
-    elif len(dataset) == 3:
-        return traces_statcorrect, inputoutput, labels
-
-
-# noinspection PyShadowingNames
-def split_data_percentage(dataset, training_fraction=0.5):
-    if len(dataset) == 2:
-        traces, inputoutput = dataset
-    elif len(dataset) == 3:
-        traces, inputoutput, labels = dataset
-
-    traces_train = traces[:int(traces.shape[0] * training_fraction)]
-    traces_test = traces[int(traces.shape[0] * training_fraction):]
-    inputoutput_train = inputoutput[:int(inputoutput.shape[0] * training_fraction)]
-    inputoutput_test = inputoutput[int(inputoutput.shape[0] * training_fraction):]
     if len(dataset) == 3:
-        labels_train = labels[:int(labels.shape[0] * training_fraction)]
-        labels_test = labels[int(labels.shape[0] * training_fraction):]
-
-    if len(dataset) == 2:
-        return (traces_train, traces_test), (inputoutput_train, inputoutput_test)
-    elif len(dataset) == 3:
-        return (traces_train, traces_test), (inputoutput_train, inputoutput_test), (labels_train, labels_test)
+        return traces_statcorrect, inputoutput, key
+    elif len(dataset) == 4:
+        return traces_statcorrect, inputoutput, key, labels
 
 
-def create_labels_sboxinputkey(dataset, input_index=0, static_key=0):
-    if len(dataset) == 2:
-        traces, inputoutput = dataset
-    elif len(dataset) == 3:
-        traces, inputoutput, _ = dataset
+# Should not need this value with different train and test sets...
+# def split_data_percentage(dataset, training_fraction=0.5):
+#     if len(dataset) == 2:
+#         traces, inputoutput = dataset
+#     elif len(dataset) == 3:
+#         traces, inputoutput, labels = dataset
+#
+#     traces_train = traces[:int(traces.shape[0] * training_fraction)]
+#     traces_test = traces[int(traces.shape[0] * training_fraction):]
+#     inputoutput_train = inputoutput[:int(inputoutput.shape[0] * training_fraction)]
+#     inputoutput_test = inputoutput[int(inputoutput.shape[0] * training_fraction):]
+#     if len(dataset) == 3:
+#         labels_train = labels[:int(labels.shape[0] * training_fraction)]
+#         labels_test = labels[int(labels.shape[0] * training_fraction):]
+#
+#     if len(dataset) == 2:
+#         return (traces_train, traces_test), (inputoutput_train, inputoutput_test)
+#     elif len(dataset) == 3:
+#         return (traces_train, traces_test), (inputoutput_train, inputoutput_test), (labels_train, labels_test)
 
-    labels = np.zeros(inputoutput.shape)
-    for i, v in enumerate(inputoutput):
-        labels[i] = hw[AES_Sbox[bytes.fromhex(v)[input_index] ^ static_key]]
 
-    return traces, inputoutput, labels
+def create_labels_sboxinputkey(dataset, database_file, col):
+    if len(dataset) == 3:
+        traces, inputoutput, key = dataset
+    else:
+        traces, inputoutput, key, _ = dataset
+
+    labels = np.loadtxt(database_file, delimiter=',', dtype=np.int, skiprows=1,
+                     usecols=col)
+    # labels = np.zeros(inputoutput.shape)
+    # for i, v in enumerate(inputoutput):
+    #     labels[i] = hw[AES_Sbox[bytes.fromhex(v)[input_index] ^ bytes.fromhex(key[i])[input_index]]]
+
+    return traces, inputoutput, key, labels
+
+
+def key_rank(model, inout_test, traces_test, kByte, trueKey):
+    p = model.predict(traces_test)
+    rank = np.zeros(inout_test.shape[0])
+    prob_vector = np.zeros(256)
+
+    for i, v in enumerate(inout_test):
+        for kh in range(0, 256):
+            hemw = hw[AES_Sbox[bytes.fromhex(v)[kByte] ^ kh]]
+            prob_vector[kh] += p[i][hemw]
+        df = pd.DataFrame({'prob': prob_vector})
+        df = df.sort_values(['prob'],ascending=False)
+        df = df.reset_index()
+        df.rename(columns={'index': 'keyH'},inplace=True)
+        rank[i] = df[df.keyH == int(trueKey, 16)].index.tolist()[0]
+    return rank
 
 
 # use for hamming weight leakage model
@@ -166,24 +193,25 @@ def create_big_model(classes=256, number_samples=200):
 
 
 if __name__ == '__main__':
-
+    trainset = 'AES_trainset.csv'
+    testset = 'AES_testset.csv'
+    features = 377
     if 'dataset' not in locals():
-        dataset = load_traces('traceSWAES.csv', 1, 326)
-
+        dataset = load_traces(trainset, 1, 377, features)
         dataset = statcorrect_traces(dataset)
-        # dataset = shorten_traces(dataset, 228405-100, 200)
 
-        # Args: Dataset, Byte to Attack, Subkey[Bayte] of first round
-        test_acc = np.zeros(16)
-        key = 'DEADBEEF01234567CAFEBABE89ABCDEF'
+        dataset_test = load_traces(testset, 1, 380, features)
+        dataset_test = statcorrect_traces(dataset_test)
+
+        key_prediction = np.zeros(shape=(16, min(dataset_test[1].shape[0], dataset[1].shape[0])))
         for i in range(16):
-            rk = key[i * 2:i * 2 + 2]
-            dataset_keyhype = create_labels_sboxinputkey(dataset, i, int(rk, 16))  # Template - Use known SubKey byte
-            dataset_keyhype = split_data_percentage(dataset_keyhype, training_fraction=0.85)
-            (traces_train, traces_test), (inputoutput_train, inputoutput_test), (
-            labels_train, labels_test) = dataset_keyhype
+            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 380 + i)  # Template - Use known SubKey byte
+            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 383 + i)
+            # dataset_keyhype = split_data_percentage(dataset_keyhype, training_fraction=0.85)
+            traces_train, inputoutput_train, _, labels_train = dataset_keyh
+            traces_test, inputoutput_test, key, labels_test = dataset_test_core
 
-            print("<------------------Using byte: {} with subkey: {}------------------>".format(i, rk))
+            print("<------------------Attacking Byte: {}------------------>".format(i))
             # print(traces_train.shape, traces_train.dtype)
             # print(traces_test.shape, traces_test.dtype)
             # print(inputoutput_train.shape, inputoutput_train.dtype)
@@ -192,9 +220,9 @@ if __name__ == '__main__':
             # print(labels_test.shape, labels_test.dtype)
             # print(labels_train[0])
 
-            min_class_tr = int(np.min(labels_train))
-            min_class_ts = int(np.min(labels_test))
-            classes = max(len(np.unique(labels_train)) + min_class_tr, len(np.unique(labels_test)) + min_class_ts)
+            # min_class_tr = int(np.min(labels_train))
+            # min_class_ts = int(np.min(labels_test))
+            # classes = max(len(np.unique(labels_train)) + min_class_tr, len(np.unique(labels_test)) + min_class_ts)
             classes = 9
 
             traces_train_reshaped = traces_train.reshape((traces_train.shape[0], traces_train.shape[1], 1))
@@ -234,18 +262,19 @@ if __name__ == '__main__':
 
             history = model.fit(x=traces_train_reshaped,
                                 y=labels_train_categorical,
-                                batch_size=100,
+                                batch_size=10000,
                                 verbose=0,
-                                epochs=250,
-                                class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
-                                                                               labels_train),
+                                epochs=500,
+                                # class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
+                                #                                              labels_train),
                                 validation_data=(traces_test_reshaped, labels_test_categorical),
                                 callbacks=callbacks)
 
-            t = model.evaluate(x=traces_test_reshaped,
-                               y=labels_test_categorical,
-                               verbose=0)
+            model.save("AES_trained_model{}.h5".format(i))
 
-            test_acc[i] = t[1]
-
-        print(test_acc)
+            key_prediction[i] = key_rank(model, inputoutput_test, traces_test_reshaped, i, key[0][i:i + 2])
+            plt.plot(pd.DataFrame(key_prediction).index.values, pd.DataFrame(key_prediction)[0])
+        plt.xlabel('# of traces')
+        plt.ylabel('Rank')
+        plt.xticks(np.arange(0, inputoutput_test.shape[0], step=500))
+        plt.show()

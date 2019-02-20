@@ -7,9 +7,9 @@ import aes
 import argparse
 
 parser = argparse.ArgumentParser(description='Convert trs files to CSV.')
-parser.add_argument('f', help="trs file input", type=str, nargs=1)
-parser.add_argument('a', help="algorithm", type=str, nargs=1, choices=['AES', 'DES'])
-parser.add_argument('-k', nargs=1, type=str, help='Algorithm Used. DES or AES and Encryption Key')
+parser.add_argument('f', help="Input file .trs", type=str, nargs=1)
+parser.add_argument('a', help="Algorithm Used. AES or DES", type=str, nargs=1, choices=['AES', 'DES'], )
+parser.add_argument('-k', nargs=1, type=str, help=' Uniform Encryption Key supplied (key not in dataset)')
 
 args = parser.parse_args()
 DES: int = 0
@@ -169,7 +169,6 @@ with trsfile.open(filename, 'r') as traces:
     else:
         df_traces['key'] = args.k[0]
         idx = 2
-
 
     b = 0
     if ALG == AES:
