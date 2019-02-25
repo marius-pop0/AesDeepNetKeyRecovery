@@ -89,28 +89,6 @@ def statcorrect_traces(dataset):
     elif len(dataset) == 4:
         return traces_statcorrect, inputoutput, key, labels
 
-
-# Should not need this value with different train and test sets...
-# def split_data_percentage(dataset, training_fraction=0.5):
-#     if len(dataset) == 2:
-#         traces, inputoutput = dataset
-#     elif len(dataset) == 3:
-#         traces, inputoutput, labels = dataset
-#
-#     traces_train = traces[:int(traces.shape[0] * training_fraction)]
-#     traces_test = traces[int(traces.shape[0] * training_fraction):]
-#     inputoutput_train = inputoutput[:int(inputoutput.shape[0] * training_fraction)]
-#     inputoutput_test = inputoutput[int(inputoutput.shape[0] * training_fraction):]
-#     if len(dataset) == 3:
-#         labels_train = labels[:int(labels.shape[0] * training_fraction)]
-#         labels_test = labels[int(labels.shape[0] * training_fraction):]
-#
-#     if len(dataset) == 2:
-#         return (traces_train, traces_test), (inputoutput_train, inputoutput_test)
-#     elif len(dataset) == 3:
-#         return (traces_train, traces_test), (inputoutput_train, inputoutput_test), (labels_train, labels_test)
-
-
 def create_labels_sboxinputkey(dataset, database_file, col):
     if len(dataset) == 3:
         traces, inputoutput, key = dataset
@@ -204,7 +182,7 @@ if __name__ == '__main__':
         dataset_test = statcorrect_traces(dataset_test)
 
         key_prediction = np.zeros(shape=(16, min(dataset_test[1].shape[0], dataset[1].shape[0])))
-        for i in range(16):
+        for i in range(1,2):
             dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 380 + i)  # Template - Use known SubKey byte
             dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 383 + i)
             # dataset_keyhype = split_data_percentage(dataset_keyhype, training_fraction=0.85)
@@ -272,9 +250,14 @@ if __name__ == '__main__':
 
             model.save("AES_trained_model{}.h5".format(i))
 
-            key_prediction[i] = key_rank(model, inputoutput_test, traces_test_reshaped, i, key[0][i:i + 2])
-            plt.plot(pd.DataFrame(key_prediction).index.values, pd.DataFrame(key_prediction)[0])
+            key_prediction[i] = key_rank(model, inputoutput_test, traces_test_reshaped, i, key[0][2*i:2*i+2])
+            plt.plot(pd.DataFrame(key_prediction[i]).index.values, pd.DataFrame(key_prediction[i])[0],
+                     label='KeyByte{}: {}'.format(i, key[0][2*i:2*i+2]))
+            del model
+
         plt.xlabel('# of traces')
         plt.ylabel('Rank')
         plt.xticks(np.arange(0, inputoutput_test.shape[0], step=500))
+        plt.legend()
+        plt.title("CNN")
         plt.show()
