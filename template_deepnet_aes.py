@@ -1,15 +1,16 @@
 import numpy as np
 import pandas as pd
-import sys
-from sklearn.utils import class_weight
+import matplotlib.pyplot as plt
+
 from keras import backend as K
 from keras.models import Model
-from keras.optimizers import SGD
-from keras.layers import Flatten, Dense, Input, Conv1D, MaxPooling1D
-from keras.regularizers import l1_l2
+from keras.optimizers import SGD, RMSprop
+from keras.layers import Flatten, Dense, Input, Conv1D, MaxPooling1D, AveragePooling1D
 from keras.utils import to_categorical
 from keras.callbacks import Callback, ModelCheckpoint
-import matplotlib.pyplot as plt
+from IDNNs.idnns.information.information_process import get_information
+from IDNNs.idnns.plots.plot_figures import plot_all_epochs, extract_array, load_figures
+from joblib import dump, load
 
 
 AES_Sbox = np.array(
@@ -46,10 +47,10 @@ AES_inv_Sbox = np.array(
 hw = np.array([bin(x).count("1") for x in range(256)])
 
 
-def load_traces(database_file, start_at=1, number_samples=0, n_features=1):
+def load_traces(database_file, start_at=1, number_samples=0):
     # Power Consumption Start_at -> Start_at + Number_Samples
     traces = np.loadtxt(database_file, delimiter=',', dtype=np.float64, skiprows=1,
-                        usecols=range(start_at, min(start_at + number_samples, n_features)))
+                        usecols=range(start_at, start_at + number_samples))
     # Plaintext Start_at - 1
     inputoutput = np.loadtxt(database_file, delimiter=',', dtype=np.str, skiprows=1,
                              usecols=start_at - 1)
@@ -97,9 +98,6 @@ def create_labels_sboxinputkey(dataset, database_file, col):
 
     labels = np.loadtxt(database_file, delimiter=',', dtype=np.int, skiprows=1,
                      usecols=col)
-    # labels = np.zeros(inputoutput.shape)
-    # for i, v in enumerate(inputoutput):
-    #     labels[i] = hw[AES_Sbox[bytes.fromhex(v)[input_index] ^ bytes.fromhex(key[i])[input_index]]]
 
     return traces, inputoutput, key, labels
 
@@ -121,70 +119,78 @@ def key_rank(model, inout_test, traces_test, kByte, trueKey):
     return rank
 
 
+def _evaluate(model: Model, nodes_to_evaluate, x, y=None):
+    symb_inputs = (model._feed_inputs + model._feed_targets + model._feed_sample_weights)
+    f = K.function(symb_inputs, nodes_to_evaluate)
+    x_, y_, sample_weight_ = model._standardize_user_data(x, y)
+    return f(x_ + y_ + sample_weight_)
+
+
+def get_activations(model, x, layer_name=None):
+    nodes = [layer.output for layer in model.layers if layer.name == layer_name or layer_name is None]
+    # we process the placeholders later (Inputs node in Keras). Because there's a bug in Tensorflow.
+    input_layer_outputs, layer_outputs = [], []
+    [input_layer_outputs.append(node) if 'input_' in node.name else layer_outputs.append(node) for node in nodes]
+    activations = _evaluate(model, layer_outputs, x, y=None)
+    activations_dict = dict(zip([output.name for output in layer_outputs], activations))
+    activations_inputs_dict = dict(zip([output.name for output in input_layer_outputs], x))
+    result = activations_inputs_dict.copy()
+    result.update(activations_dict)
+    completeActivations = []
+    for i in range(len(result)):
+        completeActivations.append(list(result.items())[i][1])
+    return completeActivations
+
 # use for hamming weight leakage model
 def create_model(classes=9, number_samples=200):
     input_shape = (number_samples, 1)
     trace_input = Input(shape=input_shape)
-    x = Conv1D(filters=10, kernel_size=10, strides=10, activation='relu', padding='valid', name='block1_conv1')(
+    x = Conv1D(filters=16, kernel_size=10, strides=10, activation='relu', padding='valid', name='block1_conv1')(
         trace_input)
-    x = MaxPooling1D(pool_size=1, strides=1, padding='valid', name='block1_pool')(x)
+    # x = Conv1D(filters=256, kernel_size=3, strides=3, activation='relu', padding='valid', name='block1_conv2')(x)
+    # x = Conv1D(filters=256, kernel_size=3, strides=3, activation='relu', padding='valid', name='block1_conv3')(x)
+    x = MaxPooling1D(pool_size=2, strides=2, padding='valid', name='block1_pool')(x)
     x = Flatten(name='flatten')(x)
     x = Dense(50, activation='tanh', name='fc1')(x)
     x = Dense(50, activation='tanh', name='fc2')(x)
     x = Dense(classes, activation='softmax', name='predictions')(x)
 
     model = Model(trace_input, x, name='cnn')
-    optimizer = SGD(lr=0.01, decay=0, momentum=0, nesterov=True)
+    optimizer = SGD(lr=0.001, decay=0, momentum=0, nesterov=True)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
-
-# use for bit leakage model
-def create_big_model(classes=256, number_samples=200):
+# 1 Conv 2 Dense Layers with RMSprop optimizer - CnnBest Benadjila et al.
+def create_model_ascad(classes=9, number_samples=200):
     input_shape = (number_samples, 1)
     trace_input = Input(shape=input_shape)
-    # Block 1
     x = Conv1D(filters=64, kernel_size=10, strides=10, activation='relu', padding='same', name='block1_conv1')(
         trace_input)
-    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block1_pool')(x)
-    # Block 2
-    x = Conv1D(filters=128, kernel_size=10, strides=10, activation='relu', padding='same', name='block2_conv1')(
-        x)
-    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block2_pool')(x)
-    # Block 3
-    x = Conv1D(filters=256, kernel_size=10, strides=10, activation='relu', padding='same', name='block3_conv1')(
-        x)
-    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block3_pool')(x)
-    # Block 4
-    x = Conv1D(filters=512, kernel_size=10, strides=10, activation='relu', padding='same', name='block4_conv1')(
-        x)
-    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block4_pool')(x)
+    x = AveragePooling1D(pool_size=2, strides=2, padding='same', name='block1_pool')(x)
     x = Flatten(name='flatten')(x)
-    x = Dense(50, activation='tanh', name='fc1')(x)
-    x = Dense(50, activation='tanh', name='fc2')(x)
+    x = Dense(4096, activation='tanh', name='fc1')(x)
+    x = Dense(4096, activation='tanh', name='fc2')(x)
     x = Dense(classes, activation='softmax', name='predictions')(x)
-
-    model = Model(trace_input, x, name='cnn')
-    optimizer = SGD(lr=0.01, decay=0, momentum=0, nesterov=True)
+    model = Model(trace_input, x, name='cnn_RMSprop')
+    optimizer = RMSprop(lr=0.00001, decay=0)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
 
 if __name__ == '__main__':
-    trainset = 'AES_trainset.csv'
-    testset = 'AES_testset.csv'
-    features = 377
+    trainset = 'datasets/SmartCardAES/AES_trainset.csv'
+    testset = 'datasets/SmartCardAES/AES_testset.csv'
     if 'dataset' not in locals():
-        dataset = load_traces(trainset, 1, 377, features)
+        dataset = load_traces(trainset, 1, 1654)
         dataset = statcorrect_traces(dataset)
 
-        dataset_test = load_traces(testset, 1, 380, features)
+        dataset_test = load_traces(testset, 1, 1654)
         dataset_test = statcorrect_traces(dataset_test)
 
         key_prediction = np.zeros(shape=(16, min(dataset_test[1].shape[0], dataset[1].shape[0])))
         for i in range(1,2):
-            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 380 + i)  # Template - Use known SubKey byte
-            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 383 + i)
+            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + i)  # Template - Use known SubKey byte
+            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + i)
             # dataset_keyhype = split_data_percentage(dataset_keyhype, training_fraction=0.85)
             traces_train, inputoutput_train, _, labels_train = dataset_keyh
             traces_test, inputoutput_test, key, labels_test = dataset_test_core
@@ -219,7 +225,6 @@ if __name__ == '__main__':
 
                 def on_epoch_end(self, epoch, logs=None):
                     logs = logs or {}
-
                     predictions = self.model.predict(self.data)
                     correctly_classified = (np.argmax(predictions, axis=1) == self.labels)
                     _sum = 0.
@@ -228,28 +233,62 @@ if __name__ == '__main__':
                         n_total = len(np.where(self.labels == i)[0])
                         _sum += n_correct / n_total
                     recall = _sum / len(np.unique(self.labels))
-
                     print(self.message_prefix + 'recall:', recall)
 
 
+            class CalculateActivations(Callback):
+                def __init__(self, calcEpoch):
+                    self.calcEpoch = calcEpoch
+                    self.idx = 0
+                    self.ws = []
+
+                def on_epoch_end(self, epoch, logs=None):
+                    if epoch == self.calcEpoch[self.idx]:
+                        print("Getting Activations...")
+                        self.ws.append(get_activations(self.model, self.validation_data[0])[1:])
+                        self.idx += 1
+
+            epoch_max = 1000
+            num_of_samples=25
+            important_epoch = np.unique(np.logspace(np.log2(1), np.log2(epoch_max), num_of_samples, dtype=int, base=2)) - 1
             calculate_recall_train = CalculateRecall(traces_train_reshaped, labels_train, 'train')
             calculate_recall_test = CalculateRecall(traces_test_reshaped, labels_test, 'test')
-            callbacks = [calculate_recall_train, calculate_recall_test, save_model]
+            calculate_act_test = CalculateActivations(important_epoch)
+
+            callbacks = [calculate_recall_train, calculate_recall_test, save_model, calculate_act_test]
 
             model = create_model(classes=classes, number_samples=traces_train.shape[1])
 
             history = model.fit(x=traces_train_reshaped,
                                 y=labels_train_categorical,
-                                batch_size=10000,
+                                batch_size=500,
                                 verbose=0,
-                                epochs=500,
+                                epochs=epoch_max,
                                 # class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
                                 #                                              labels_train),
                                 validation_data=(traces_test_reshaped, labels_test_categorical),
                                 callbacks=callbacks)
 
+            print("Saving Trained Model...")
             model.save("AES_trained_model{}.h5".format(i))
+            print("Saving Activation Values...")
+            dump(callbacks[3].ws, 'ActivationsKey{}.gz'.format(i), compress=3)
 
+            print("Calculating Information...")
+            mut = get_information(callbacks[3].ws, traces_test, labels_test_categorical,
+                                                      64, 50, model, [0,0,0,0,0,0,0],calc_parallel=False)
+            print("Saving Mutual Information Values...")
+            dump(mut, 'MutInfoKey{}.gz'.format(i), compress=3)
+
+            print("Plotting Mutual Info...")
+            I_XT_array = np.array(extract_array(mut, 'local_IXT'))
+            I_TY_array = np.array(extract_array(mut, 'local_ITY'))
+            [font_size, axis_font, bar_font, colorbar_axis, sizes, yticks, xticks, title_strs, f, axes] = load_figures(
+                2, "Mutual Info")
+            plot_all_epochs(I_XT_array, I_TY_array, axes, important_epoch, f, 0, 0, sizes, font_size, yticks, xticks,
+                            colorbar_axis, title_strs, axis_font, bar_font, 'mut.png')
+
+            print("Determining Correct Key Ranking...")
             key_prediction[i] = key_rank(model, inputoutput_test, traces_test_reshaped, i, key[0][2*i:2*i+2])
             plt.plot(pd.DataFrame(key_prediction[i]).index.values, pd.DataFrame(key_prediction[i])[0],
                      label='KeyByte{}: {}'.format(i, key[0][2*i:2*i+2]))
