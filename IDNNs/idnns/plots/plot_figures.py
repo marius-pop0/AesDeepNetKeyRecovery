@@ -45,7 +45,7 @@ def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_
     if len(I_TY_array[0].shape) >1:
         I_XT_array = np.mean(I_XT_array, axis=0)
         I_TY_array = np.mean(I_TY_array, axis=0)
-    max_index = size_ind if size_ind != -1 else I_XT_array.shape[0]
+    max_index = size_ind if size_ind != -1 else (I_XT_array.shape[0] - 2)
 
     cmap = plt.get_cmap('gnuplot')
     #For each epoch we have diffrenet color
