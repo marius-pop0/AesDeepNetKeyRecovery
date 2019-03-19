@@ -13,7 +13,7 @@ from IDNNs.idnns.information.mutual_info_estimation import calc_varitional_infor
 warnings.filterwarnings("ignore")
 from joblib import Parallel, delayed
 
-NUM_CORES = multiprocessing.cpu_count()
+NUM_CORES = 4
 from IDNNs.idnns.information.mutual_information_calculation import *
 
 
@@ -106,7 +106,7 @@ def calc_by_sampling_neurons(ws_iter_index, num_of_samples, label, sigma, bins, 
 
 def calc_information_for_epoch(iter_index, interval_information_display, ws_iter_index, bins, unique_inverse_x,
                                unique_inverse_y, label, b, b1,
-                               len_unique_a, pys, pxs, py_x, pys1, input_size, layerSize,
+                               len_unique_a, pys, pxs, py_x, pys1, input_size, layerSize=[],
                                calc_vartional_information=False, calc_information_by_sampling=False,
                                calc_full_and_vartional=False, calc_regular_information=True, num_of_samples=100,
                                sigma=0.5, ss=[], ks=[]):
@@ -145,14 +145,15 @@ def calc_information_for_epoch(iter_index, interval_information_display, ws_iter
 
     elif calc_regular_information:
         params = np.array(
-            [calc_information_for_layer_with_other(data=ws_iter_index[i], bins=bins, unique_inverse_x=unique_inverse_x,
+            [calc_information_for_layer_with_other(data=ws_iter_index, bins=bins, unique_inverse_x=unique_inverse_x,
                                                    unique_inverse_y=unique_inverse_y, label=label,
                                                    b=b, b1=b1, len_unique_a=len_unique_a, pxs=pxs,
                                                    p_YgX=py_x, pys1=pys1)
-             for i in range(len(ws_iter_index))])
+             #for i in range(len(ws_iter_index))
+             ])
 
-    if np.mod(iter_index, interval_information_display) == 0:
-        print('Calculated The information of epoch number - {0}'.format(iter_index))
+    # if np.mod(iter_index, interval_information_display) == 0:
+        # print('Calculated The information of epoch number - {0}'.format(iter_index))
     return params
 
 
@@ -178,7 +179,7 @@ def extract_probs(label, x):
     return pys, pys1, p_y_given_x, b1, b, unique_a, unique_inverse_x, unique_inverse_y, pxs
 
 
-def get_information(ws, x, label, num_of_bins, interval_information_display, model, layerSize,
+def get_information(ws, x, label, num_of_bins, interval_information_display,
                     calc_parallel=True, py_hats=0):
     """Calculate the information for the network for all the epochs and all the layers"""
     print('Start calculating the information...')
@@ -191,12 +192,12 @@ def get_information(ws, x, label, num_of_bins, interval_information_display, mod
                                      (i, interval_information_display, ws[i], bins, unique_inverse_x, unique_inverse_y,
                                       label,
                                       b, b1, len(unique_a), pys,
-                                      pxs, p_y_given_x, pys1, x.shape[1], layerSize)
+                                      pxs, p_y_given_x, pys1, x.shape[1])
                                      for i in range(len(ws))))
     else:
         params = np.array([calc_information_for_epoch
                            (i, interval_information_display, ws[i], bins, unique_inverse_x, unique_inverse_y,
                             label, b, b1, len(unique_a), pys,
-                            pxs, p_y_given_x, pys1, x.shape[1], layerSize)
+                            pxs, p_y_given_x, pys1, x.shape[1])
                            for i in range(len(ws))])
     return params

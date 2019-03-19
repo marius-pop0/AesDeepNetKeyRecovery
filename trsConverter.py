@@ -188,7 +188,9 @@ with trsfile.open(filename, 'r') as traces:
     # Sort by column name
     # df_traces = df_traces.sort_values('round1_SboxOut')
 
-    print(df_traces.head())
+    # print(df_traces.head())
 
     # Write to CSV file --> Takes a while to do for large traces
     df_traces.to_csv("trace.csv", index=False)
+
+    print("Conversion and Leakage Calculations Complete!")

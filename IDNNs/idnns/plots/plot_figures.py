@@ -474,7 +474,7 @@ def update_axes(axes, xlabel, ylabel, xlim, ylim, title, xscale, yscale, x_ticks
 
 
 def extract_array(data, name):
-    results = [[data[j,k][name] for k in range(data.shape[1])] for j in range(data.shape[0])]
+    results = [[data[j][k][0][name] for k in range(len(data[0]))] for j in range(len(data))]
     return results
 
 def update_bars_num_of_ts(num, p_ts, H_Xgt,DKL_YgX_YgT, axes, ind_array):
