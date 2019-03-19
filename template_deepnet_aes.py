@@ -11,6 +11,7 @@ from keras.callbacks import Callback, ModelCheckpoint
 from IDNNs.idnns.information.information_process import get_information
 from IDNNs.idnns.plots.plot_figures import plot_all_epochs, extract_array
 from joblib import dump, load
+import argparse
 
 
 AES_Sbox = np.array(
@@ -122,16 +123,16 @@ def key_rank(model, inout_test, traces_test, kByte, trueKey):
     return rank
 
 
-def plot_key_rank(keypred,byte):
+def plot_key_rank(keypred, byte, file_name):
     # Graph rank of correct key for one byte
     plt.figure(i)
     plt.plot(keypred.index.values, keypred[0], label='key{}'.format(byte))
     plt.xlabel('# of traces')
     plt.ylabel('Rank')
-    plt.xticks(np.arange(0, 20001, step=5000))
+    plt.xticks(np.arange(0, 40001, step=5000))
     plt.legend()
     plt.title("CNN")
-    plt.savefig('KeyByte{}: {}.jpg'.format(byte, key[0][2 * byte:2 * byte + 2]), dpi=500, format='jpg')
+    plt.savefig('plots/{}{}({}).jpg'.format(file_name, byte, key[0][2 * byte:2 * byte + 2]), dpi=500, format='jpg')
 
 
 def _evaluate(model: Model, nodes_to_evaluate, x, y=None):
@@ -157,7 +158,7 @@ def get_activations(model, x, layer_name=None):
     return completeActivations
 
 
-def plot_mut(mut, important_epoch):
+def plot_mut(mut, important_epoch, file_name, keyByte):
     print("Plotting Mutual Info...")
     I_XT_array = np.array(extract_array(mut, 'local_IXT'))
     x_ticks = np.arange(np.around(I_XT_array.min()) - 1, np.around(I_XT_array.max()) + 1, 1)
@@ -170,7 +171,7 @@ def plot_mut(mut, important_epoch):
     f, (axes) = plt.subplots(1, 1, sharey=True, figsize=(14, 10))
     f.subplots_adjust(left=0.097, bottom=0.12, right=.87, top=0.99, wspace=0.03, hspace=0.03)
     plot_all_epochs(I_XT_array, I_TY_array, axes, important_epoch, f, 0, 0, I_XT_array.shape[0], font_size, y_ticks,
-                    x_ticks, colorbar_axis, "Mutual Info", axis_font, bar_font, 'mut_cnn2')
+                    x_ticks, colorbar_axis, "Mutual Info", axis_font, bar_font, "plots/{}{}".format(file_name,keyByte))
 
 
 # use for hamming weight leakage model
@@ -230,8 +231,18 @@ def create_model_ascad(classes=9, number_samples=200):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Deepnet AES Side Channel Analysis')
+    parser.add_argument('o', help="Output Model Name", type=str, nargs=1)
+    parser.add_argument('n', help="Network Type", type=str, nargs=1, choices=['mlp', 'cnn'])
+    parser.add_argument('kr', help='Key Rank Plot Names', nargs=1, type=str)
+    parser.add_argument('mi', help='Mutual Info Plot Names', nargs=1, type=str)
+    parser.add_argument('-e', help='Number of Epochs', nargs=1, type=int)
+    parser.add_argument('-ms', help='Mutual Information Samples', nargs=1, type=int)
+
+    args = parser.parse_args()
     trainset = 'datasets/SmartCardAES/AES_trainset.csv'
     testset = 'datasets/SmartCardAES/AES_testset.csv'
+    model_output = 'models/{}'.format(args.o[0])
     if 'dataset' not in locals():
         dataset = load_traces(trainset, 1, 1654)
         dataset = statcorrect_traces(dataset)
@@ -241,10 +252,10 @@ if __name__ == '__main__':
 
         # key_prediction = np.zeros(shape=(16, min(dataset_test[1].shape[0], dataset[1].shape[0])))
         for i in range(1,2):
-            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1656 + i)  # Template - Use known SubKey byte
+            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + i)  # Template - Use known SubKey byte
             # dataset_keyh = shorten_traces(dataset_keyh,0,20000)
-            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1656 + i)
-            dataset_test_core = shorten_traces(dataset_test_core, 0, 20000)
+            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + i)
+            dataset_test_core = shorten_traces(dataset_test_core, 0, 40000)
 
             # dataset_keyhype = split_data_percentage(dataset_keyhype, training_fraction=0.85)
             traces_train, inputoutput_train, _, labels_train = dataset_keyh
@@ -308,8 +319,8 @@ if __name__ == '__main__':
                             self.idx += 1
 
 
-            epoch_max = 100
-            num_of_samples = 75
+            epoch_max = args.e[0] if args.e is not None else 100
+            num_of_samples = args.ms[0] if args.ms is not None else 75
             important_epoch = np.unique(
                 np.logspace(np.log2(1), np.log2(epoch_max), num_of_samples, dtype=int, base=2)) - 1
             calculate_recall_train = CalculateRecall(traces_train_reshaped, labels_train, 'train')
@@ -318,7 +329,12 @@ if __name__ == '__main__':
 
             callbacks = [calculate_recall_train, calculate_recall_test, save_model, calculate_mut_test]
 
-            model = create_model(classes=classes, number_samples=traces_train.shape[1])
+            if args.n[0] == 'cnn':
+                print("Building CNN Network")
+                model = create_model(classes=classes, number_samples=traces_train.shape[1])
+            else:
+                print("Building MLP Network")
+                model = create_model_mlp(classes=classes, number_samples=traces_train.shape[1])
 
             history = model.fit(x=traces_train_reshaped,
                                 y=labels_train_categorical,
@@ -331,16 +347,16 @@ if __name__ == '__main__':
                                 callbacks=callbacks)
 
             print("Saving Trained Model...")
-            model.save("AES_trained_model{}.h5".format(i))
+            model.save(model_output+"{}.h5".format(i))
             print("Saving Mutual Info Values...")
             dump(callbacks[3].mut, 'MutualInfoKey{}.gz'.format(i), compress=3)
 
-            plot_mut(callbacks[3].mut, important_epoch)
+            plot_mut(callbacks[3].mut, important_epoch, args.mi[0], i)
 
 
             print("Determining Correct Key Ranking...")
             key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, i, key[0][2*i:2*i+2])
-            plot_key_rank(pd.DataFrame(key_prediction), i)
+            plot_key_rank(pd.DataFrame(key_prediction), i, args.kr[0])
 
             plt.show()
             del model
