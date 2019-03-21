@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import argparse
 
 from keras import backend as K
 from keras.models import Model
@@ -10,9 +11,7 @@ from keras.utils import to_categorical
 from keras.callbacks import Callback, ModelCheckpoint
 from IDNNs.idnns.information.information_process import get_information
 from IDNNs.idnns.plots.plot_figures import plot_all_epochs, extract_array
-from joblib import dump, load
-import argparse
-
+from joblib import dump
 
 AES_Sbox = np.array(
     [0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76, 0xCA, 0x82, 0xC9,
@@ -29,21 +28,6 @@ AES_Sbox = np.array(
      0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E, 0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E, 0xE1, 0xF8, 0x98, 0x11,
      0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF, 0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42,
      0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16])
-AES_inv_Sbox = np.array(
-    [0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38, 0xBF, 0x40, 0xA3, 0x9E, 0x81, 0xF3, 0xD7, 0xFB, 0x7C, 0xE3, 0x39,
-     0x82, 0x9B, 0x2F, 0xFF, 0x87, 0x34, 0x8E, 0x43, 0x44, 0xC4, 0xDE, 0xE9, 0xCB, 0x54, 0x7B, 0x94, 0x32, 0xA6, 0xC2,
-     0x23, 0x3D, 0xEE, 0x4C, 0x95, 0x0B, 0x42, 0xFA, 0xC3, 0x4E, 0x08, 0x2E, 0xA1, 0x66, 0x28, 0xD9, 0x24, 0xB2, 0x76,
-     0x5B, 0xA2, 0x49, 0x6D, 0x8B, 0xD1, 0x25, 0x72, 0xF8, 0xF6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xD4, 0xA4, 0x5C, 0xCC,
-     0x5D, 0x65, 0xB6, 0x92, 0x6C, 0x70, 0x48, 0x50, 0xFD, 0xED, 0xB9, 0xDA, 0x5E, 0x15, 0x46, 0x57, 0xA7, 0x8D, 0x9D,
-     0x84, 0x90, 0xD8, 0xAB, 0x00, 0x8C, 0xBC, 0xD3, 0x0A, 0xF7, 0xE4, 0x58, 0x05, 0xB8, 0xB3, 0x45, 0x06, 0xD0, 0x2C,
-     0x1E, 0x8F, 0xCA, 0x3F, 0x0F, 0x02, 0xC1, 0xAF, 0xBD, 0x03, 0x01, 0x13, 0x8A, 0x6B, 0x3A, 0x91, 0x11, 0x41, 0x4F,
-     0x67, 0xDC, 0xEA, 0x97, 0xF2, 0xCF, 0xCE, 0xF0, 0xB4, 0xE6, 0x73, 0x96, 0xAC, 0x74, 0x22, 0xE7, 0xAD, 0x35, 0x85,
-     0xE2, 0xF9, 0x37, 0xE8, 0x1C, 0x75, 0xDF, 0x6E, 0x47, 0xF1, 0x1A, 0x71, 0x1D, 0x29, 0xC5, 0x89, 0x6F, 0xB7, 0x62,
-     0x0E, 0xAA, 0x18, 0xBE, 0x1B, 0xFC, 0x56, 0x3E, 0x4B, 0xC6, 0xD2, 0x79, 0x20, 0x9A, 0xDB, 0xC0, 0xFE, 0x78, 0xCD,
-     0x5A, 0xF4, 0x1F, 0xDD, 0xA8, 0x33, 0x88, 0x07, 0xC7, 0x31, 0xB1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xEC, 0x5F, 0x60,
-     0x51, 0x7F, 0xA9, 0x19, 0xB5, 0x4A, 0x0D, 0x2D, 0xE5, 0x7A, 0x9F, 0x93, 0xC9, 0x9C, 0xEF, 0xA0, 0xE0, 0x3B, 0x4D,
-     0xAE, 0x2A, 0xF5, 0xB0, 0xC8, 0xEB, 0xBB, 0x3C, 0x83, 0x53, 0x99, 0x61, 0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6,
-     0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D])
 
 hw = np.array([bin(x).count("1") for x in range(256)])
 
@@ -58,7 +42,7 @@ def load_traces(database_file, start_at=1, number_samples=0):
     # Chiphertext Start_at + Number_Samples
     # Key Start_at + Number_Samples + 1
     key = np.loadtxt(database_file, delimiter=',', dtype=np.str, skiprows=1,
-                             usecols=start_at + number_samples + 1)
+                     usecols=start_at + number_samples + 1)
     # print("traces shape: {}\ninputoutput shape: {}\n".format(traces.shape, inputoutput.shape))
     return traces, inputoutput, key
 
@@ -94,14 +78,15 @@ def shorten_traces(dataset, start_at=0, number_samples=0):
     elif len(dataset) == 4:
         return traces_selected, inputoutput_selected, key_selected, labels_selected
 
+
 def create_labels_sboxinputkey(dataset, database_file, col):
     if len(dataset) == 3:
         traces, inputoutput, key = dataset
     else:
         traces, inputoutput, key, _ = dataset
 
-    labels = np.loadtxt(database_file, delimiter=',', dtype=np.int, skiprows=1,
-                     usecols=col)
+    labels = np.loadtxt(database_file, delimiter=',', dtype=np.float, skiprows=1,
+                        usecols=col)
 
     return traces, inputoutput, key, labels
 
@@ -116,9 +101,9 @@ def key_rank(model, inout_test, traces_test, kByte, trueKey):
             hemw = hw[AES_Sbox[bytes.fromhex(v)[kByte] ^ kh]]
             prob_vector[kh] += p[i][hemw]
         df = pd.DataFrame({'prob': prob_vector})
-        df = df.sort_values(['prob'],ascending=False)
+        df = df.sort_values(['prob'], ascending=False)
         df = df.reset_index()
-        df.rename(columns={'index': 'keyH'},inplace=True)
+        df.rename(columns={'index': 'keyH'}, inplace=True)
         rank[i] = df[df.keyH == int(trueKey, 16)].index.tolist()[0]
     return rank
 
@@ -171,7 +156,7 @@ def plot_mut(mut, important_epoch, file_name, keyByte):
     f, (axes) = plt.subplots(1, 1, sharey=True, figsize=(14, 10))
     f.subplots_adjust(left=0.097, bottom=0.12, right=.87, top=0.99, wspace=0.03, hspace=0.03)
     plot_all_epochs(I_XT_array, I_TY_array, axes, important_epoch, f, 0, 0, I_XT_array.shape[0], font_size, y_ticks,
-                    x_ticks, colorbar_axis, "Mutual Info", axis_font, bar_font, "plots/{}{}".format(file_name,keyByte))
+                    x_ticks, colorbar_axis, "Mutual Info", axis_font, bar_font, "plots/{}{}".format(file_name, keyByte))
 
 
 # use for hamming weight leakage model
@@ -213,6 +198,7 @@ def create_model_mlp(classes=9, number_samples=200):
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
+
 # 1 Conv 2 Dense Layers with RMSprop optimizer - CnnBest Benadjila et al.
 def create_model_ascad(classes=9, number_samples=200):
     input_shape = (number_samples, 1)
@@ -251,7 +237,7 @@ if __name__ == '__main__':
         dataset_test = statcorrect_traces(dataset_test)
 
         # key_prediction = np.zeros(shape=(16, min(dataset_test[1].shape[0], dataset[1].shape[0])))
-        for i in range(1,2):
+        for i in range(1, 2):
             dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + i)  # Template - Use known SubKey byte
             # dataset_keyh = shorten_traces(dataset_keyh,0,20000)
             dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + i)
@@ -347,17 +333,15 @@ if __name__ == '__main__':
                                 callbacks=callbacks)
 
             print("Saving Trained Model...")
-            model.save(model_output+"{}.h5".format(i))
+            model.save(model_output + "{}.h5".format(i))
             print("Saving Mutual Info Values...")
             dump(callbacks[3].mut, 'MutualInfoKey{}.gz'.format(i), compress=3)
 
             plot_mut(callbacks[3].mut, important_epoch, args.mi[0], i)
 
-
             print("Determining Correct Key Ranking...")
-            key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, i, key[0][2*i:2*i+2])
+            key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, i, key[0][2 * i:2 * i + 2])
             plot_key_rank(pd.DataFrame(key_prediction), i, args.kr[0])
 
             plt.show()
             del model
-
