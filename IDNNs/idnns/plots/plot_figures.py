@@ -1,6 +1,6 @@
 """Plot the networks in the information plane"""
 import matplotlib
-matplotlib.use("TkAgg")
+# matplotlib.use("TkAgg")
 import numpy as np
 import _pickle as cPickle
 # import cPickle
@@ -15,10 +15,10 @@ import matplotlib.animation as animation
 import math
 import os.path
 import IDNNs.idnns.plots.utils as utils
-import tkinter as tk
+# import tkinter as tk
 from numpy import linalg as LA
 
-from tkinter import filedialog
+# from tkinter import filedialog
 LAYERS_COLORS  = ['red', 'blue', 'green', 'yellow', 'pink', 'orange']
 
 def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_j, size_ind,
@@ -72,7 +72,7 @@ def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_
     #Save the figure and add color bar
     if index_i ==axes.shape[0]-1 and index_j ==axes.shape[1]-1:
         utils.create_color_bar(f, cmap, colorbar_axis, bar_font, epochsInds, title='Epochs')
-        f.savefig(save_name+'.jpg', dpi=500, format='jpg')
+        f.savefig(save_name+'.png', dpi=500, format='png')
 
 
 def plot_by_training_samples(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_j, size_ind, font_size, y_ticks, x_ticks, colorbar_axis, title_str, axis_font, bar_font, save_name, samples_labels):
@@ -98,7 +98,7 @@ def plot_by_training_samples(I_XT_array, I_TY_array, axes, epochsInds, f, index_
     #Create color bar and save it
     if index_i == axes.shape[0] - 1 and index_j == axes.shape[1] - 1:
         utils.create_color_bar(f, cmap, colorbar_axis, bar_font, epochsInds, title='Training Data')
-        f.savefig(save_name + '.jpg', dpi=150, format='jpg')
+        f.savefig(save_name + '.png', dpi=150, format='png')
 
 def calc_velocity(data, epochs):
     """Calculate the velocity (both in X and Y) for each layer"""
@@ -275,7 +275,7 @@ def plot_snapshots(name_s, save_name, i, time_stemps=[13, 180, 963],font_size = 
     data_array = utils.get_data(name_s)
     data = np.squeeze(data_array['information'])
     update_line_specipic_points(time_stemps, data, axes, to_do, font_size, axis_font)
-    f.savefig(save_name + '.jpg', dpi=200, format='jpg')
+    f.savefig(save_name + '.png', dpi=200, format='png')
 
 
 def load_figures(mode, str_names=None):
@@ -657,10 +657,11 @@ if __name__ == '__main__':
             save_name = ALL_SAMPLES
             mode =3
             str_names = [[prex+'t_32_1.pickle']]
-        root = tk.Tk()
-        root.withdraw()
-        file_path = filedialog.askopenfilename()
-        str_names = [[('/').join(file_path.split('/')[:-1]) + '/']]
+        # root = tk.Tk()
+        # root.withdraw()
+        # file_path = filedialog.askopenfilename()
+        # str_names = [[('/').join(file_path.split('/')[:-1]) + '/']]
+        str_names = "/home/nfs/mpop/Documents/plots/"
         if do_plot_action:
             plot_figures(str_names, mode, save_name)
         if do_plot_norms:

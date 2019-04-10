@@ -1,6 +1,6 @@
 import matplotlib
 
-matplotlib.use("TkAgg")
+# matplotlib.use("TkAgg")
 import scipy.io as sio
 
 import matplotlib.pyplot as plt
@@ -136,7 +136,7 @@ def adjust_axes(axes_log, axes_norms, p_0, p_1, f_log, f_norms, axes_snr=None, f
 
 	# axes_log.set_xscale('log')
 	f_log.savefig(directory_name + 'log_gradient.svg', dpi=200, format='svg')
-	f_norms.savefig(directory_name + 'norms.jpg', dpi=200, format='jpg')
+	f_norms.savefig(directory_name + 'norms.png', dpi=200, format='png')
 
 
 def adjustAxes(axes, axis_font=20, title_str='', x_ticks=[], y_ticks=[], x_lim=None, y_lim=None,

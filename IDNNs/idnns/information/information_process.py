@@ -60,7 +60,7 @@ def calc_information_sampling(data, bins, pys1, pxs, label, b, b1, len_unique_a,
 
 def calc_information_for_layer_with_other(data, bins, unique_inverse_x, unique_inverse_y, label,
                                           b, b1, len_unique_a, pxs, p_YgX, pys1,
-                                          percent_of_sampling=50):
+                                          percent_of_sampling=100):
     local_IXT, local_ITY = calc_information_sampling(data, bins, pys1, pxs, label, b, b1,
                                                      len_unique_a, p_YgX, unique_inverse_x,
                                                      unique_inverse_y)
@@ -79,29 +79,29 @@ def calc_information_for_layer_with_other(data, bins, unique_inverse_x, unique_i
 
 def calc_by_sampling_neurons(ws_iter_index, num_of_samples, label, sigma, bins, pxs):
     iter_infomration = []
-    for j in range(len(ws_iter_index)):
-        data = ws_iter_index[j]
-        new_data = np.zeros((num_of_samples * data.shape[0], data.shape[1]))
-        labels = np.zeros((num_of_samples * label.shape[0], label.shape[1]))
-        x = np.zeros((num_of_samples * data.shape[0], 2))
-        for i in range(data.shape[0]):
-            cov_matrix = np.eye(data[i, :].shape[0]) * sigma
-            t_i = np.random.multivariate_normal(data[i, :], cov_matrix, num_of_samples)
-            new_data[num_of_samples * i:(num_of_samples * (i + 1)), :] = t_i
-            labels[num_of_samples * i:(num_of_samples * (i + 1)), :] = label[i, :]
-            x[num_of_samples * i:(num_of_samples * (i + 1)), 0] = i
-        b = np.ascontiguousarray(x).view(np.dtype((np.void, x.dtype.itemsize * x.shape[1])))
-        unique_array, unique_indices, unique_inverse_x, unique_counts = \
-            np.unique(b, return_index=True, return_inverse=True, return_counts=True)
-        b_y = np.ascontiguousarray(labels).view(np.dtype((np.void, labels.dtype.itemsize * labels.shape[1])))
-        unique_array_y, unique_indices_y, unique_inverse_y, unique_counts_y = \
-            np.unique(b_y, return_index=True, return_inverse=True, return_counts=True)
-        pys1 = unique_counts_y / float(np.sum(unique_counts_y))
-        iter_infomration.append(
-            calc_information_for_layer(data=new_data, bins=bins, unique_inverse_x=unique_inverse_x,
-                                       unique_inverse_y=unique_inverse_y, pxs=pxs, pys1=pys1))
-        params = np.array(iter_infomration)
-        return params
+
+    data = ws_iter_index
+    new_data = np.zeros((num_of_samples * data.shape[0], data.shape[1]))
+    labels = np.zeros((num_of_samples * label.shape[0], label.shape[1]))
+    x = np.zeros((num_of_samples * data.shape[0], 2))
+    for i in range(data.shape[0]):
+        cov_matrix = np.eye(data[i, :].shape[0]) * sigma
+        t_i = np.random.multivariate_normal(data[i, :], cov_matrix, num_of_samples)
+        new_data[num_of_samples * i:(num_of_samples * (i + 1)), :] = t_i
+        labels[num_of_samples * i:(num_of_samples * (i + 1)), :] = label[i, :]
+        x[num_of_samples * i:(num_of_samples * (i + 1)), 0] = i
+    b = np.ascontiguousarray(x).view(np.dtype((np.void, x.dtype.itemsize * x.shape[1])))
+    unique_array, unique_indices, unique_inverse_x, unique_counts = \
+        np.unique(b, return_index=True, return_inverse=True, return_counts=True)
+    b_y = np.ascontiguousarray(labels).view(np.dtype((np.void, labels.dtype.itemsize * labels.shape[1])))
+    unique_array_y, unique_indices_y, unique_inverse_y, unique_counts_y = \
+        np.unique(b_y, return_index=True, return_inverse=True, return_counts=True)
+    pys1 = unique_counts_y / float(np.sum(unique_counts_y))
+    iter_infomration.append(
+        calc_information_for_layer(data=new_data, bins=bins, unique_inverse_x=unique_inverse_x,
+                                   unique_inverse_y=unique_inverse_y, pxs=pxs, pys1=pys1))
+    params = np.array(iter_infomration)
+    return params
 
 
 def calc_information_for_epoch(iter_index, interval_information_display, ws_iter_index, bins, unique_inverse_x,
@@ -140,7 +140,7 @@ def calc_information_for_epoch(iter_index, interval_information_display, ws_iter
             range(len(ws_iter_index))]
     # Calc infomration of only subset of the neurons
     elif calc_information_by_sampling:
-        parmas = calc_by_sampling_neurons(ws_iter_index=ws_iter_index, num_of_samples=num_of_samples, label=label,
+        params = calc_by_sampling_neurons(ws_iter_index=ws_iter_index, num_of_samples=num_of_samples, label=label,
                                           sigma=sigma, bins=bins, pxs=pxs)
 
     elif calc_regular_information:

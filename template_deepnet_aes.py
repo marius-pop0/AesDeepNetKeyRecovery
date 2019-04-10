@@ -5,7 +5,7 @@ import argparse
 
 from keras import backend as K
 from keras.models import Model
-from keras.optimizers import SGD, RMSprop
+from keras.optimizers import SGD, RMSprop, Adam
 from keras.layers import Flatten, Dense, Input, Conv1D, MaxPooling1D, AveragePooling1D
 from keras.utils import to_categorical
 from keras.callbacks import Callback, ModelCheckpoint
@@ -32,17 +32,17 @@ AES_Sbox = np.array(
 hw = np.array([bin(x).count("1") for x in range(256)])
 
 
-def load_traces(database_file, start_at=1, number_samples=0):
+def load_traces(database_file, start_at=1, number_samples=0, max_rows=int(1e6)):
     # Power Consumption Start_at -> Start_at + Number_Samples
     traces = np.loadtxt(database_file, delimiter=',', dtype=np.float64, skiprows=1,
-                        usecols=range(start_at, start_at + number_samples))
+                        usecols=range(start_at, start_at + number_samples), max_rows=max_rows)
     # Plaintext Start_at - 1
     inputoutput = np.loadtxt(database_file, delimiter=',', dtype=np.str, skiprows=1,
-                             usecols=start_at - 1)
+                             usecols=start_at - 1, max_rows=max_rows)
     # Chiphertext Start_at + Number_Samples
     # Key Start_at + Number_Samples + 1
     key = np.loadtxt(database_file, delimiter=',', dtype=np.str, skiprows=1,
-                     usecols=start_at + number_samples + 1)
+                     usecols=start_at + number_samples + 1, max_rows=max_rows)
     # print("traces shape: {}\ninputoutput shape: {}\n".format(traces.shape, inputoutput.shape))
     return traces, inputoutput, key
 
@@ -86,9 +86,26 @@ def create_labels_sboxinputkey(dataset, database_file, col):
         traces, inputoutput, key, _ = dataset
 
     labels = np.loadtxt(database_file, delimiter=',', dtype=np.float, skiprows=1,
-                        usecols=col)
+                        usecols=col, max_rows=traces.shape[0]).astype(np.int)
 
     return traces, inputoutput, key, labels
+
+
+def plot_weights_ave_std(ave, std, importantEpoch):
+    print("Plotting Standardized Weights...")
+    plt.figure(3)
+    ave = np.transpose(ave)
+    std = np.transpose(std)
+    for i, a in enumerate(ave):
+        a = a / np.linalg.norm(a)
+        plt.plot(importantEpoch, a, label='Ave Layer{}'.format(i))
+    for i, s in enumerate(std):
+        s = s / np.linalg.norm(s)
+        plt.plot(importantEpoch, s, '--', label='Std Layer{}'.format(i))
+
+    # plt.xticks(importantEpoch)
+    plt.legend()
+    plt.savefig('plots/{}.png'.format('networkWeights'), dpi=500, format='png')
 
 
 def key_rank(model, inout_test, traces_test, kByte, trueKey):
@@ -110,45 +127,39 @@ def key_rank(model, inout_test, traces_test, kByte, trueKey):
 
 def plot_key_rank(keypred, byte, file_name):
     # Graph rank of correct key for one byte
-    plt.figure(i)
+    print("Plotting Key Rank...")
+    plt.figure(1)
     plt.plot(keypred.index.values, keypred[0], label='key{}'.format(byte))
     plt.xlabel('# of traces')
     plt.ylabel('Rank')
     plt.xticks(np.arange(0, 40001, step=5000))
     plt.legend()
     plt.title("CNN")
-    plt.savefig('plots/{}{}({}).jpg'.format(file_name, byte, key[0][2 * byte:2 * byte + 2]), dpi=500, format='jpg')
+    plt.savefig('plots/{}{}({}).png'.format(file_name, byte, key[0][2 * byte:2 * byte + 2]), dpi=500, format='png')
 
 
-def _evaluate(model: Model, nodes_to_evaluate, x, y=None):
-    symb_inputs = (model._feed_inputs + model._feed_targets + model._feed_sample_weights)
+def _evaluate(modl: Model, nodes_to_evaluate, x, y=None):
+    symb_inputs = (modl._feed_inputs + modl._feed_targets + modl._feed_sample_weights)
     f = K.function(symb_inputs, nodes_to_evaluate)
-    x_, y_, sample_weight_ = model._standardize_user_data(x, y)
+    x_, y_, sample_weight_ = modl._standardize_user_data(x, y)
     return f(x_ + y_ + sample_weight_)
 
 
-def get_activations(model, x, layer_name=None):
+def get_activations(model, x, y, layer_name=None):
     nodes = [layer.output for layer in model.layers if layer.name == layer_name or layer_name is None]
     # we process the placeholders later (Inputs node in Keras). Because there's a bug in Tensorflow.
     input_layer_outputs, layer_outputs = [], []
     [input_layer_outputs.append(node) if 'input_' in node.name else layer_outputs.append(node) for node in nodes]
-    activations = _evaluate(model, layer_outputs, x, y=None)
-    activations_dict = dict(zip([output.name for output in layer_outputs], activations))
-    activations_inputs_dict = dict(zip([output.name for output in input_layer_outputs], x))
-    result = activations_inputs_dict.copy()
-    result.update(activations_dict)
-    completeActivations = []
-    for i in range(len(result)):
-        completeActivations.append(list(result.items())[i][1])
-    return completeActivations
+    activations = _evaluate(model, layer_outputs, x, y)
+    return activations
 
 
 def plot_mut(mut, important_epoch, file_name, keyByte):
     print("Plotting Mutual Info...")
     I_XT_array = np.array(extract_array(mut, 'local_IXT'))
-    x_ticks = np.arange(np.around(I_XT_array.min()) - 1, np.around(I_XT_array.max()) + 1, 1)
+    x_ticks = np.arange(0, np.around(I_XT_array.max()) + 1, 1)
     I_TY_array = np.array(extract_array(mut, 'local_ITY'))
-    y_ticks = np.arange(np.around(I_TY_array.min() - .1, decimals=1), np.around(I_TY_array.max() + .1, decimals=1), .1)
+    y_ticks = np.arange(0, np.around(I_TY_array.max() + .1, decimals=1), .2)
     font_size = 34
     axis_font = 28
     bar_font = 28
@@ -163,38 +174,41 @@ def plot_mut(mut, important_epoch, file_name, keyByte):
 def create_model(classes=9, number_samples=200):
     input_shape = (number_samples, 1)
     trace_input = Input(shape=input_shape)
-    x = Conv1D(filters=64, kernel_size=10, strides=10, activation='relu', padding='valid', name='block1_conv1')(
+    x = Conv1D(filters=16, kernel_size=3, strides=3, activation='relu', padding='valid', name='block1_conv1')(
         trace_input)
+    x = Conv1D(filters=32, kernel_size=3, strides=3, activation='relu', padding='valid', name='block1_conv2')(x)
     # x = Conv1D(filters=32, kernel_size=3, strides=3, activation='relu', padding='valid', name='block1_conv2')(x)
-    x = MaxPooling1D(pool_size=2, strides=2, padding='valid', name='block1_pool')(x)
+    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block1_pool')(x)
     x = Flatten(name='flatten')(x)
     # x = Dense(200, activation='tanh', name='fc1')(x)
     x = Dense(128, activation='tanh', name='fc2')(x)
-    x = Dense(128, activation='tanh', name='fc3')(x)
+    x = Dense(64, activation='tanh', name='fc3')(x)
     # x = Dense(64, activation='tanh', name='fc4')(x)
     # x = Dense(64, activation='tanh', name='fc5')(x)
     x = Dense(classes, activation='softmax', name='predictions')(x)
 
     model = Model(trace_input, x, name='cnn')
-    optimizer = SGD(lr=0.001, decay=0, momentum=0.9, nesterov=True)
+    # optimizer = SGD(lr=0.001, decay=0, momentum=0.9, nesterov=True)
+    optimizer = Adam(lr=0.0004, decay=0)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
 
-# 6 Dense Layers with RMSprop optimizer MLP
+# 4 Dense Layers with Adam optimizer MLP
 def create_model_mlp(classes=9, number_samples=200):
     input_shape = (number_samples, 1)
     trace_input = Input(shape=input_shape)
     x = Flatten(name='flatten')(trace_input)
-    x = Dense(200, activation='relu', name='fc1')(x)
-    x = Dense(200, activation='relu', name='fc2')(x)
-    # x = Dense(200, activation='relu', name='fc3')(x)
-    x = Dense(128, activation='relu', name='fc4')(x)
-    x = Dense(128, activation='relu', name='fc5')(x)
+    x = Dense(256, activation='tanh', name='fc1')(x)
+    x = Dense(128, activation='tanh', name='fc2')(x)
+    # x = Dense(128, activation='relu', name='fc3')(x)
+    x = Dense(64, activation='tanh', name='fc4')(x)
+    # x = Dense(32, activation='tanh', name='fc5')(x)
     # x = Dense(128, activation='relu', name='fc6')(x)
     x = Dense(classes, activation='softmax', name='predictions')(x)
-    model = Model(trace_input, x, name='mlp_RMSprop')
-    optimizer = RMSprop(lr=0.0001, decay=0)
+    model = Model(trace_input, x, name='mlp_sgd')
+    # optimizer = SGD(lr=0.001, decay=0, momentum=0.9, nesterov=True)
+    optimizer = Adam(lr=0.0004, decay=0)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
@@ -227,23 +241,29 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     trainset = 'datasets/SmartCardAES/AES_trainset.csv'
+    # trainset = 'datasets/SmartCardAES/AES_trainset_sim.csv'
+    # trainset = '/home/nfs/mpop/Documents/SmartCardAES/AES_trainset.csv'
     testset = 'datasets/SmartCardAES/AES_testset.csv'
+    # testset = 'datasets/SmartCardAES/AES_testset_sim.csv'
+    # testset = '/home/nfs/mpop/Documents/SmartCardAES/AES_testset.csv'
+
     model_output = 'models/{}'.format(args.o[0])
     if 'dataset' not in locals():
-        dataset = load_traces(trainset, 1, 1654)
+        dataset = load_traces(trainset, 1, 1654, 10000)
+        # dataset = load_traces(trainset, 1, 16, 10000)
         dataset = statcorrect_traces(dataset)
 
-        dataset_test = load_traces(testset, 1, 1654)
+        dataset_test = load_traces(testset, 1, 1654, 2000)
+        # dataset_test = load_traces(testset, 1, 16, 2000)
         dataset_test = statcorrect_traces(dataset_test)
 
         # key_prediction = np.zeros(shape=(16, min(dataset_test[1].shape[0], dataset[1].shape[0])))
-        for i in range(1, 2):
+        for i in range(0, 1):
             dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + i)  # Template - Use known SubKey byte
-            # dataset_keyh = shorten_traces(dataset_keyh,0,20000)
+            # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 19 + i)  # Template - Use known SubKey byte
             dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + i)
-            dataset_test_core = shorten_traces(dataset_test_core, 0, 40000)
+            # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 19 + i)
 
-            # dataset_keyhype = split_data_percentage(dataset_keyhype, training_fraction=0.85)
             traces_train, inputoutput_train, _, labels_train = dataset_keyh
             traces_test, inputoutput_test, key, labels_test = dataset_test_core
 
@@ -298,9 +318,32 @@ if __name__ == '__main__':
                 def on_epoch_end(self, epoch, logs=None):
                     if epoch == self.calcEpoch[self.idx]:
                         print("Getting Activations...")
-                        ws = get_activations(self.model, self.validation_data[0])[1:]
+                        ws = get_activations(self.model, self.validation_data[0], self.validation_data[1])
                         self.mut.append(
-                            get_information(ws, self.x, self.validation_data[1], 256, 50, calc_parallel=True))
+                            get_information(ws, self.x, self.validation_data[1], 30, 50, calc_parallel=True))
+                        if self.idx < len(self.calcEpoch) - 1:
+                            self.idx += 1
+
+
+            class CalculateLayerStat(Callback):
+                def __init__(self, calcEpoch):
+                    self.ave = []
+                    self.std = []
+                    self.idx = 0
+                    self.calcEpoch = calcEpoch
+
+                def on_epoch_end(self, epoch, logs=None):
+                    if epoch == self.calcEpoch[self.idx]:
+                        ave = np.zeros(len(self.model.layers))
+                        std = np.zeros(len(self.model.layers))
+                        for l, layer in enumerate(self.model.layers):
+                            # Should calc only for dense layers... Chose l dynamically?
+                            if 'fc' in layer.name or 'predictions' in layer.name:
+                                w = layer.get_weights()
+                                ave[l] = np.average(w[1])
+                                std[l] = np.std(w[1])
+                        self.ave.append(ave)
+                        self.std.append(std)
                         if self.idx < len(self.calcEpoch) - 1:
                             self.idx += 1
 
@@ -312,8 +355,10 @@ if __name__ == '__main__':
             calculate_recall_train = CalculateRecall(traces_train_reshaped, labels_train, 'train')
             calculate_recall_test = CalculateRecall(traces_test_reshaped, labels_test, 'test')
             calculate_mut_test = CalculateMut(important_epoch, traces_test)
+            calculate_layerStat = CalculateLayerStat(important_epoch)
 
-            callbacks = [calculate_recall_train, calculate_recall_test, save_model, calculate_mut_test]
+            callbacks = [calculate_recall_train, calculate_recall_test, save_model, calculate_mut_test,
+                         calculate_layerStat]
 
             if args.n[0] == 'cnn':
                 print("Building CNN Network")
@@ -324,11 +369,9 @@ if __name__ == '__main__':
 
             history = model.fit(x=traces_train_reshaped,
                                 y=labels_train_categorical,
-                                batch_size=500,
+                                batch_size=512,
                                 verbose=0,
                                 epochs=epoch_max,
-                                # class_weight=class_weight.compute_class_weight('balanced', np.unique(labels_train),
-                                #                                              labels_train),
                                 validation_data=(traces_test_reshaped, labels_test_categorical),
                                 callbacks=callbacks)
 
@@ -343,5 +386,9 @@ if __name__ == '__main__':
             key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, i, key[0][2 * i:2 * i + 2])
             plot_key_rank(pd.DataFrame(key_prediction), i, args.kr[0])
 
+            plot_weights_ave_std(callbacks[4].ave, callbacks[4].std, important_epoch)
+
             plt.show()
+            for k in important_epoch:
+                print(history.history['val_acc'][k])
             del model

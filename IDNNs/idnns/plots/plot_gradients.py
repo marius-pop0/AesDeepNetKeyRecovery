@@ -1,11 +1,11 @@
 'Calculate and plot the gradients (the mean and std of the mini-batch gradients) of the trained network'
 import matplotlib
-matplotlib.use("TkAgg")
+# matplotlib.use("TkAgg")
 import numpy as np
 import IDNNs.idnns.plots.utils as plt_ut
 import matplotlib.pyplot as plt
-import tkinter as tk
-from tkinter import filedialog
+# import tkinter as tk
+# from tkinter import filedialog
 from numpy import linalg as LA
 import os
 import sys
@@ -216,8 +216,8 @@ if __name__ == '__main__':
     directory = './figures/'
     if not os.path.exists(directory):
         os.makedirs(directory)
-    root = tk.Tk()
-    root.withdraw()
-    file_path = filedialog.askopenfilename()
-    str_names = [[('/').join(file_path.split('/')[:-1]) + '/']]
-    plot_gradients(str_names, figures_dir=directory)
+    # root = tk.Tk()
+    # root.withdraw()
+    # file_path = filedialog.askopenfilename()
+    # str_names = [[('/').join(file_path.split('/')[:-1]) + '/']]
+    # plot_gradients(str_names, figures_dir=directory)
