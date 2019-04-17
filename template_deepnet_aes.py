@@ -2,6 +2,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import argparse
+import ast
+import os
+import copy
 
 from keras import backend as K
 from keras.models import Model
@@ -91,7 +94,21 @@ def create_labels_sboxinputkey(dataset, database_file, col):
     return traces, inputoutput, key, labels
 
 
-def plot_weights_ave_std(ave, std, importantEpoch):
+def plot_loss_acc(loss, acc, dir):
+    print("Plotting Loss and Accuracy...")
+    fig = plt.figure(4)
+    ax = plt.subplot(111)
+    ax.plot(loss, label='Loss')
+    plt.title("Network Loss")
+    ax.legend()
+    plt.savefig('{}loss.png'.format(dir), dpi=500, format='png')
+    plt.figure(5)
+    plt.plot(acc, label='Network Accuracy')
+    plt.legend()
+    plt.savefig('{}accuracy.png'.format(dir), dpi=500, format='png')
+
+
+def plot_weights_ave_std(ave, std, importantEpoch, dir):
     print("Plotting Standardized Weights...")
     plt.figure(3)
     ave = np.transpose(ave)
@@ -105,7 +122,7 @@ def plot_weights_ave_std(ave, std, importantEpoch):
 
     # plt.xticks(importantEpoch)
     plt.legend()
-    plt.savefig('plots/{}.png'.format('networkWeights'), dpi=500, format='png')
+    plt.savefig('{}networkWeights.png'.format(dir), dpi=500, format='png')
 
 
 def key_rank(model, inout_test, traces_test, kByte, trueKey):
@@ -125,17 +142,17 @@ def key_rank(model, inout_test, traces_test, kByte, trueKey):
     return rank
 
 
-def plot_key_rank(keypred, byte, file_name):
+def plot_key_rank(keypred, byte, file_name, traces):
     # Graph rank of correct key for one byte
     print("Plotting Key Rank...")
     plt.figure(1)
     plt.plot(keypred.index.values, keypred[0], label='key{}'.format(byte))
     plt.xlabel('# of traces')
     plt.ylabel('Rank')
-    plt.xticks(np.arange(0, 40001, step=5000))
+    plt.xticks(np.arange(0, traces+1, step=traces/10))
     plt.legend()
     plt.title("CNN")
-    plt.savefig('plots/{}{}({}).png'.format(file_name, byte, key[0][2 * byte:2 * byte + 2]), dpi=500, format='png')
+    plt.savefig('{}{}({}).png'.format(file_name, byte, key[0][2 * byte:2 * byte + 2]), dpi=500, format='png')
 
 
 def _evaluate(modl: Model, nodes_to_evaluate, x, y=None):
@@ -153,8 +170,21 @@ def get_activations(model, x, y, layer_name=None):
     activations = _evaluate(model, layer_outputs, x, y)
     return activations
 
+def calc_ave_mut(mut):
+    mut_ave = copy.deepcopy(mut[0])
+    for e in range(len(mut[0])):
+        for i in range(len(mut[0][e])):
+            ave_IXT = 0
+            ave_ITY = 0
+            for j in range(args.r):
+                ave_IXT = ave_IXT + mut[j][e][i][0]['local_IXT']
+                ave_ITY = ave_ITY + mut[j][e][i][0]['local_ITY']
 
-def plot_mut(mut, important_epoch, file_name, keyByte):
+            mut_ave[e][i][0]['local_IXT'] = ave_IXT / args.r
+            mut_ave[e][i][0]['local_ITY'] = ave_ITY / args.r
+    return mut_ave
+
+def plot_mut(mut, important_epoch, file_name, epochFlag):
     print("Plotting Mutual Info...")
     I_XT_array = np.array(extract_array(mut, 'local_IXT'))
     x_ticks = np.arange(0, np.around(I_XT_array.max()) + 1, 1)
@@ -167,26 +197,30 @@ def plot_mut(mut, important_epoch, file_name, keyByte):
     f, (axes) = plt.subplots(1, 1, sharey=True, figsize=(14, 10))
     f.subplots_adjust(left=0.097, bottom=0.12, right=.87, top=0.99, wspace=0.03, hspace=0.03)
     plot_all_epochs(I_XT_array, I_TY_array, axes, important_epoch, f, 0, 0, I_XT_array.shape[0], font_size, y_ticks,
-                    x_ticks, colorbar_axis, "Mutual Info", axis_font, bar_font, "plots/{}{}".format(file_name, keyByte))
+                    x_ticks, colorbar_axis, "Mutual Info", axis_font, bar_font, file_name, epochFlag)
 
 
 # use for hamming weight leakage model
-def create_model(classes=9, number_samples=200):
+def create_model_cnn(architecture, classes=9, number_samples=200):
     input_shape = (number_samples, 1)
     trace_input = Input(shape=input_shape)
-    x = Conv1D(filters=16, kernel_size=3, strides=3, activation='relu', padding='valid', name='block1_conv1')(
-        trace_input)
-    x = Conv1D(filters=32, kernel_size=3, strides=3, activation='relu', padding='valid', name='block1_conv2')(x)
-    # x = Conv1D(filters=32, kernel_size=3, strides=3, activation='relu', padding='valid', name='block1_conv2')(x)
-    x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block1_pool')(x)
+    dense_layers = len(architecture)-1
+    first = True
+    for i, a in enumerate(architecture):
+        if i != dense_layers:
+            for j, c in enumerate(a):
+                if first:
+                    x = Conv1D(filters=c, kernel_size=3, strides=3, activation='relu', padding='valid',
+                               name='block{}_conv{}'.format(i,j))(trace_input)
+                    first = False
+                else:
+                    x = Conv1D(filters=c, kernel_size=3, strides=3, activation='relu', padding='valid',
+                               name='block{}_conv{}'.format(i,j))(x)
+            x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block{}_pool'.format(i))(x)
     x = Flatten(name='flatten')(x)
-    # x = Dense(200, activation='tanh', name='fc1')(x)
-    x = Dense(128, activation='tanh', name='fc2')(x)
-    x = Dense(64, activation='tanh', name='fc3')(x)
-    # x = Dense(64, activation='tanh', name='fc4')(x)
-    # x = Dense(64, activation='tanh', name='fc5')(x)
+    for i, a in enumerate(architecture[dense_layers]):
+        x = Dense(a, activation='tanh', name='fc{}'.format(i))(x)
     x = Dense(classes, activation='softmax', name='predictions')(x)
-
     model = Model(trace_input, x, name='cnn')
     # optimizer = SGD(lr=0.001, decay=0, momentum=0.9, nesterov=True)
     optimizer = Adam(lr=0.0004, decay=0)
@@ -195,16 +229,12 @@ def create_model(classes=9, number_samples=200):
 
 
 # 4 Dense Layers with Adam optimizer MLP
-def create_model_mlp(classes=9, number_samples=200):
+def create_model_mlp(architecture, classes=9, number_samples=200):
     input_shape = (number_samples, 1)
     trace_input = Input(shape=input_shape)
     x = Flatten(name='flatten')(trace_input)
-    x = Dense(256, activation='tanh', name='fc1')(x)
-    x = Dense(128, activation='tanh', name='fc2')(x)
-    # x = Dense(128, activation='relu', name='fc3')(x)
-    x = Dense(64, activation='tanh', name='fc4')(x)
-    # x = Dense(32, activation='tanh', name='fc5')(x)
-    # x = Dense(128, activation='relu', name='fc6')(x)
+    for i, a in enumerate(architecture):
+        x = Dense(a, activation='tanh', name='fc{}'.format(i))(x)
     x = Dense(classes, activation='softmax', name='predictions')(x)
     model = Model(trace_input, x, name='mlp_sgd')
     # optimizer = SGD(lr=0.001, decay=0, momentum=0.9, nesterov=True)
@@ -232,14 +262,21 @@ def create_model_ascad(classes=9, number_samples=200):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Deepnet AES Side Channel Analysis')
-    parser.add_argument('o', help="Output Model Name", type=str, nargs=1)
-    parser.add_argument('n', help="Network Type", type=str, nargs=1, choices=['mlp', 'cnn'])
-    parser.add_argument('kr', help='Key Rank Plot Names', nargs=1, type=str)
-    parser.add_argument('mi', help='Mutual Info Plot Names', nargs=1, type=str)
-    parser.add_argument('-e', help='Number of Epochs', nargs=1, type=int)
-    parser.add_argument('-ms', help='Mutual Information Samples', nargs=1, type=int)
+    parser.add_argument('n', help="Network Type", type=str, choices=['mlp', 'cnn'])
+    parser.add_argument('a', help='Network Architecture', type=ast.literal_eval)
+    parser.add_argument('k', help='Key Byte To Attack', type=int, choices=range(16))
+    parser.add_argument('-e', help='Number of Epochs', type=int, default=8000)
+    parser.add_argument('-ms', help='Mutual Information Samples', type=int, default=400)
+    parser.add_argument('-ts', help='Train Set Size', type=int, default=10000)
+    parser.add_argument('-vs', help='Validation Set Size', type=int, default=2000)
+    parser.add_argument('-r', help='Repetitions', type=int, default=10)
+    parser.add_argument('-rl', help='Repetitions', type=bool, default=False)
 
     args = parser.parse_args()
+
+    out_dir = '{}/net:{}_{}_epoch:{}_trainingSize:{}/'.format(os.getcwd(), args.n, args.a, args.e, args.ts)
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
     trainset = 'datasets/SmartCardAES/AES_trainset.csv'
     # trainset = 'datasets/SmartCardAES/AES_trainset_sim.csv'
     # trainset = '/home/nfs/mpop/Documents/SmartCardAES/AES_trainset.csv'
@@ -247,46 +284,36 @@ if __name__ == '__main__':
     # testset = 'datasets/SmartCardAES/AES_testset_sim.csv'
     # testset = '/home/nfs/mpop/Documents/SmartCardAES/AES_testset.csv'
 
-    model_output = 'models/{}'.format(args.o[0])
     if 'dataset' not in locals():
-        dataset = load_traces(trainset, 1, 1654, 10000)
+        dataset = load_traces(trainset, 1, 1654, args.ts)
         # dataset = load_traces(trainset, 1, 16, 10000)
         dataset = statcorrect_traces(dataset)
 
-        dataset_test = load_traces(testset, 1, 1654, 2000)
+        dataset_test = load_traces(testset, 1, 1654, args.vs)
         # dataset_test = load_traces(testset, 1, 16, 2000)
         dataset_test = statcorrect_traces(dataset_test)
 
-        # key_prediction = np.zeros(shape=(16, min(dataset_test[1].shape[0], dataset[1].shape[0])))
-        for i in range(0, 1):
-            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + i)  # Template - Use known SubKey byte
+        mutual_info = []
+        for r_nr in range(args.r):
+            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + args.k)  # Template - Use known SubKey byte
             # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 19 + i)  # Template - Use known SubKey byte
-            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + i)
+            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + args.k)
             # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 19 + i)
 
             traces_train, inputoutput_train, _, labels_train = dataset_keyh
             traces_test, inputoutput_test, key, labels_test = dataset_test_core
 
-            print("<------------------Attacking Byte: {}------------------>".format(i))
-            # print(traces_train.shape, traces_train.dtype)
-            # print(traces_test.shape, traces_test.dtype)
-            # print(inputoutput_train.shape, inputoutput_train.dtype)
-            # print(inputoutput_test.shape, inputoutput_test.dtype)
-            # print(labels_train.shape, labels_train.dtype)
-            # print(labels_test.shape, labels_test.dtype)
-            # print(labels_train[0])
-
-            # min_class_tr = int(np.min(labels_train))
-            # min_class_ts = int(np.min(labels_test))
-            # classes = max(len(np.unique(labels_train)) + min_class_tr, len(np.unique(labels_test)) + min_class_ts)
+            print("<------------------Attacking Byte: {} Iteration: {}------------------>".format(args.k, r_nr))
             classes = 9
+            if args.rl:
+                labels_train = np.random.randint(classes, size=labels_train.shape[0])
 
             traces_train_reshaped = traces_train.reshape((traces_train.shape[0], traces_train.shape[1], 1))
             labels_train_categorical = to_categorical(labels_train, num_classes=classes)
             traces_test_reshaped = traces_test.reshape((traces_test.shape[0], traces_test.shape[1], 1))
             labels_test_categorical = to_categorical(labels_test, num_classes=classes)
 
-            save_model = ModelCheckpoint('model_epoch{epoch}.h5', period=100)
+            save_model = ModelCheckpoint(out_dir+'model_epoch{epoch}.h5', period=1000)
 
 
             class CalculateRecall(Callback):
@@ -348,24 +375,66 @@ if __name__ == '__main__':
                             self.idx += 1
 
 
-            epoch_max = args.e[0] if args.e is not None else 100
-            num_of_samples = args.ms[0] if args.ms is not None else 75
+            class CalculateKeyRank(Callback):
+                def __init__(self, calcEpoch, testTraces, inout_test):
+                    self.idx = 0
+                    self.testTraces = testTraces
+                    self.inout_test = inout_test
+                    self.calcEpoch = calcEpoch
+                    self.epochTraceRank = []
+
+                def on_epoch_end(self, epoch, logs=None):
+                    if epoch == self.calcEpoch[self.idx]:
+                        # Choose random batch of test traces + inputData to calculate rank
+                        idx = np.random.randint(self.validation_data[0].shape[0], size=self.testTraces)
+                        p = self.model.predict(self.validation_data[0][idx, :])
+                        in_p = self.inout_test[idx]
+
+                        rank = np.zeros(in_p.shape[0])
+                        prob_vector = np.zeros(256)
+
+                        for i, v in enumerate(in_p):
+                            for kh in range(0, 256):
+                                hemw = hw[AES_Sbox[bytes.fromhex(v)[0] ^ kh]]
+                                prob_vector[kh] += p[i][hemw]
+                            df = pd.DataFrame({'prob': prob_vector})
+                            df = df.sort_values(['prob'], ascending=False)
+                            df = df.reset_index()
+                            df.rename(columns={'index': 'keyH'}, inplace=True)
+                            rank[i] = df[df.keyH == int('de', 16)].index.tolist()[0]
+
+                        if rank[-1] > 0:
+                            self.epochTraceRank.append(self.testTraces)
+                        else:
+                            rev_rank = rank[::-1]
+                            for i, v in enumerate(rev_rank):
+                                if v > 0:
+                                    self.epochTraceRank.append(self.testTraces-i)
+                                    break
+
+                        if self.idx < len(self.calcEpoch) - 1:
+                            self.idx += 1
+
+
+            epoch_max = args.e
+            num_of_samples = args.ms
             important_epoch = np.unique(
                 np.logspace(np.log2(1), np.log2(epoch_max), num_of_samples, dtype=int, base=2)) - 1
             calculate_recall_train = CalculateRecall(traces_train_reshaped, labels_train, 'train')
             calculate_recall_test = CalculateRecall(traces_test_reshaped, labels_test, 'test')
             calculate_mut_test = CalculateMut(important_epoch, traces_test)
             calculate_layerStat = CalculateLayerStat(important_epoch)
+            calculate_keyRaks = CalculateKeyRank(important_epoch, args.vs, inputoutput_test)
 
             callbacks = [calculate_recall_train, calculate_recall_test, save_model, calculate_mut_test,
-                         calculate_layerStat]
+                         calculate_layerStat, calculate_keyRaks]
 
-            if args.n[0] == 'cnn':
+            if args.n == 'cnn':
                 print("Building CNN Network")
-                model = create_model(classes=classes, number_samples=traces_train.shape[1])
+                model = create_model_cnn(args.a, classes=classes, number_samples=traces_train.shape[1])
             else:
                 print("Building MLP Network")
-                model = create_model_mlp(classes=classes, number_samples=traces_train.shape[1])
+                model = create_model_mlp(args.a, classes=classes, number_samples=traces_train.shape[1])
 
             history = model.fit(x=traces_train_reshaped,
                                 y=labels_train_categorical,
@@ -375,20 +444,25 @@ if __name__ == '__main__':
                                 validation_data=(traces_test_reshaped, labels_test_categorical),
                                 callbacks=callbacks)
 
-            print("Saving Trained Model...")
-            model.save(model_output + "{}.h5".format(i))
-            print("Saving Mutual Info Values...")
-            dump(callbacks[3].mut, 'MutualInfoKey{}.gz'.format(i), compress=3)
+            mutual_info.append(callbacks[3].mut)
 
-            plot_mut(callbacks[3].mut, important_epoch, args.mi[0], i)
+        print("Saving Trained Model...")
+        model.save(out_dir + "model.h5")
+        dump(history, out_dir + 'modelHistory.gz', compress=3)
+        # acc, loss, dir
+        plot_loss_acc(history.history['val_loss'], history.history['val_acc'], out_dir)
 
-            print("Determining Correct Key Ranking...")
-            key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, i, key[0][2 * i:2 * i + 2])
-            plot_key_rank(pd.DataFrame(key_prediction), i, args.kr[0])
+        print("Saving Mutual Info Values...")
+        dump(mutual_info, out_dir + 'MutualInfoKey.gz', compress=3)
+        plot_mut(calc_ave_mut(mutual_info), important_epoch, out_dir + 'mutualInfo', True)
 
-            plot_weights_ave_std(callbacks[4].ave, callbacks[4].std, important_epoch)
+        print("Determining Correct Key Ranking...")
+        key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, args.k, key[0][2*args.k: 2*args.k+2])
+        plot_key_rank(pd.DataFrame(key_prediction), args.k, out_dir + 'keyRank', args.vs)
 
-            plt.show()
-            for k in important_epoch:
-                print(history.history['val_acc'][k])
-            del model
+        print("Saving Layer Weight Data...")
+        plot_weights_ave_std(callbacks[4].ave, callbacks[4].std, important_epoch, out_dir)
+        dump(callbacks[3], out_dir + 'weights.gz', compress=3)
+
+        plot_mut(calc_ave_mut(mutual_info), callbacks[5].epochTraceRank, out_dir + 'mutualInfoRanks', False)
+

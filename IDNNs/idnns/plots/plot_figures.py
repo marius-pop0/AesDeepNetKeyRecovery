@@ -19,10 +19,10 @@ import IDNNs.idnns.plots.utils as utils
 from numpy import linalg as LA
 
 # from tkinter import filedialog
-LAYERS_COLORS  = ['red', 'blue', 'green', 'yellow', 'pink', 'orange']
+LAYERS_COLORS = ['red', 'blue', 'green', 'yellow', 'pink', 'orange']
 
 def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_j, size_ind,
-                    font_size, y_ticks, x_ticks, colorbar_axis, title_str, axis_font, bar_font, save_name, plot_error = True,index_to_emphasis=1000):
+                    font_size, y_ticks, x_ticks, colorbar_axis, title_str, axis_font, bar_font, save_name, epochFlag, plot_error = True,index_to_emphasis=1000):
     """Plot the infomration plane with the epochs in diffrnet colors """
     #If we want to plot the train and test error
     # if plot_error:
@@ -49,7 +49,10 @@ def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_
 
     cmap = plt.get_cmap('gnuplot')
     #For each epoch we have diffrenet color
-    colors = [cmap(i) for i in np.linspace(0, 1, epochsInds[max_index-1]+1)]
+    if epochFlag:
+        colors = [cmap(i) for i in np.linspace(0, 1, np.max(epochsInds)+1)]
+    else:
+        colors = [cmap(i) for i in np.linspace(0, 1, np.max(epochsInds) + 1)][::-1]
     #Change this if we have more then one network arch
     nums_arc= -1
     #Go over all the epochs and plot then with the right color
@@ -57,13 +60,13 @@ def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_
         XT = I_XT_array[index_in_range, :]
         TY = I_TY_array[index_in_range, :]
         #If this is the index that we want to emphsis
-        if epochsInds[index_in_range] ==index_to_emphasis:
-            axes[index_i, index_j].plot(XT, TY, marker='o', linestyle=None, markersize=19, markeredgewidth=0.04,
-                                        linewidth=2.1,
-                                        color='g',zorder=10)
-        else:
-                axes[index_i, index_j].plot(XT[:], TY[:], marker='o', linestyle='-', markersize=12, markeredgewidth=0.01, linewidth=0.2,
-                                color=colors[int(epochsInds[index_in_range])])
+        # if epochsInds[index_in_range] ==index_to_emphasis:
+        #     axes[index_i, index_j].plot(XT, TY, marker='o', linestyle=None, markersize=19, markeredgewidth=0.04,
+        #                                 linewidth=2.1,
+        #                                 color='g',zorder=10)
+        # else:
+        axes[index_i, index_j].plot(XT[:], TY[:], marker='o', linestyle='-', markersize=12, markeredgewidth=0.01,
+                                    linewidth=0.2, color=colors[int(epochsInds[index_in_range])])
     utils.adjustAxes(axes[index_i, index_j], axis_font=axis_font, title_str=title_str, x_ticks=x_ticks,
                      y_ticks=y_ticks, x_lim=[0, 25.1], y_lim=None,
                      set_xlabel=index_i == axes.shape[0] - 1, set_ylabel=index_j == 0, x_label='$I(X;T)$',
@@ -71,7 +74,10 @@ def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_
                      set_ylim=False, set_ticks=True, label_size=font_size)
     #Save the figure and add color bar
     if index_i ==axes.shape[0]-1 and index_j ==axes.shape[1]-1:
-        utils.create_color_bar(f, cmap, colorbar_axis, bar_font, epochsInds, title='Epochs')
+        if epochFlag:
+            utils.create_color_bar(f, cmap, colorbar_axis, bar_font, np.sort(epochsInds), title='Epochs')
+        else:
+            utils.create_color_bar(f, cmap, colorbar_axis, bar_font, np.sort(epochsInds)[::-1], title='Traces')
         f.savefig(save_name+'.png', dpi=500, format='png')
 
 
