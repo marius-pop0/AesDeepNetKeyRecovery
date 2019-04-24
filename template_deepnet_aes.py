@@ -102,9 +102,10 @@ def plot_loss_acc(loss, acc, dir):
     plt.title("Network Loss")
     ax.legend()
     plt.savefig('{}loss.png'.format(dir), dpi=500, format='png')
-    plt.figure(5)
-    plt.plot(acc, label='Network Accuracy')
-    plt.legend()
+    fig = plt.figure(5)
+    ax = plt.subplot(111)
+    ax.plot(acc, label='Network Accuracy')
+    ax.legend()
     plt.savefig('{}accuracy.png'.format(dir), dpi=500, format='png')
 
 
@@ -261,6 +262,8 @@ def create_model_ascad(classes=9, number_samples=200):
 
 
 if __name__ == '__main__':
+    assert len(K.tensorflow_backend._get_available_gpus()) > 0
+
     parser = argparse.ArgumentParser(description='Deepnet AES Side Channel Analysis')
     parser.add_argument('n', help="Network Type", type=str, choices=['mlp', 'cnn'])
     parser.add_argument('a', help='Network Architecture', type=ast.literal_eval)

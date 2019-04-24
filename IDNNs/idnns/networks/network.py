@@ -11,7 +11,7 @@ from IDNNs.idnns.networks import model as mo
 
 warnings.filterwarnings("ignore")
 summaries_dir = 'summaries'
-NUM_CORES = multiprocessing.cpu_count()
+NUM_CORES = 8
 
 
 def build_model(activation_function, layerSize, input_size, num_of_classes, learning_rate_local, save_file, covn_net):

@@ -140,7 +140,7 @@ with trsfile.open(filename, 'r') as traces:
                     key = args.k[0]
                 else:
                     exit("Invalid Key Length for AES")
-            #hemw = hw[AES_Sbox[bytes.fromhex(v)[kByte] ^ kh]]
+            # hemw = hw[AES_Sbox[bytes.fromhex(v)[kByte] ^ kh]]
             HD_r1_sbox = np.zeros(shape=16, dtype=np.int)
             HW_r1_sbox = np.zeros(shape=16, dtype=np.int)
 

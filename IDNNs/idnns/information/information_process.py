@@ -13,7 +13,7 @@ from IDNNs.idnns.information.mutual_info_estimation import calc_varitional_infor
 warnings.filterwarnings("ignore")
 from joblib import Parallel, delayed
 
-NUM_CORES = 4
+NUM_CORES = 8
 from IDNNs.idnns.information.mutual_information_calculation import *
 
 

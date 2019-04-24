@@ -12,7 +12,7 @@ from IDNNs.idnns.networks.utils import load_data
 
 # from idnns.network import utils
 # import idnns.plots.plot_gradients as plt_grads
-NUM_CORES = multiprocessing.cpu_count()
+NUM_CORES = 8
 
 
 class informationNetwork():
