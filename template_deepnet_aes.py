@@ -216,7 +216,7 @@ def create_model_cnn(architecture, classes=9, number_samples=200):
                     first = False
                 else:
                     x = Conv1D(filters=c, kernel_size=3, strides=3, activation='relu', padding='valid',
-                               name='block{}_conv{}'.format(i,j))(x)
+                               name='block{}_conv{}'.format(i, j))(x)
             x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block{}_pool'.format(i))(x)
     x = Flatten(name='flatten')(x)
     for i, a in enumerate(architecture[dense_layers]):
@@ -262,7 +262,6 @@ def create_model_ascad(classes=9, number_samples=200):
 
 
 if __name__ == '__main__':
-    assert len(K.tensorflow_backend._get_available_gpus()) > 0
 
     parser = argparse.ArgumentParser(description='Deepnet AES Side Channel Analysis')
     parser.add_argument('n', help="Network Type", type=str, choices=['mlp', 'cnn'])
@@ -273,9 +272,10 @@ if __name__ == '__main__':
     parser.add_argument('-ts', help='Train Set Size', type=int, default=10000)
     parser.add_argument('-vs', help='Validation Set Size', type=int, default=2000)
     parser.add_argument('-r', help='Repetitions', type=int, default=10)
-    parser.add_argument('-rl', help='Repetitions', type=bool, default=False)
-
+    parser.add_argument('-rl', help='Random Labels', type=bool, default=False)
     args = parser.parse_args()
+
+    assert len(K.tensorflow_backend._get_available_gpus()) > 0
 
     out_dir = '{}/net:{}_{}_epoch:{}_trainingSize:{}/'.format(os.getcwd(), args.n, args.a, args.e, args.ts)
     if not os.path.exists(out_dir):
@@ -452,11 +452,10 @@ if __name__ == '__main__':
         print("Saving Trained Model...")
         model.save(out_dir + "model.h5")
         dump(history, out_dir + 'modelHistory.gz', compress=3)
-        # acc, loss, dir
         plot_loss_acc(history.history['val_loss'], history.history['val_acc'], out_dir)
 
         print("Saving Mutual Info Values...")
-        dump(mutual_info, out_dir + 'MutualInfoKey.gz', compress=3)
+        dump(mutual_info, out_dir + 'MutualInfo.gz', compress=3)
         plot_mut(calc_ave_mut(mutual_info), important_epoch, out_dir + 'mutualInfo', True)
 
         print("Determining Correct Key Ranking...")
@@ -464,8 +463,9 @@ if __name__ == '__main__':
         plot_key_rank(pd.DataFrame(key_prediction), args.k, out_dir + 'keyRank', args.vs)
 
         print("Saving Layer Weight Data...")
-        plot_weights_ave_std(callbacks[4].ave, callbacks[4].std, important_epoch, out_dir)
         dump(callbacks[3], out_dir + 'weights.gz', compress=3)
+        plot_weights_ave_std(callbacks[4].ave, callbacks[4].std, important_epoch, out_dir)
 
+        dump(callbacks[5].epochTraceRank, 'epochRanks.gz', compress=3)
         plot_mut(calc_ave_mut(mutual_info), callbacks[5].epochTraceRank, out_dir + 'mutualInfoRanks', False)
 
