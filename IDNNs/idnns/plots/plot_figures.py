@@ -56,6 +56,8 @@ def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_
     #Change this if we have more then one network arch
     nums_arc= -1
     #Go over all the epochs and plot then with the right color
+    marker_list = ['.', ',', 'o', 'v', '^', '>', '<', '1', '2', '3', '4', '8', 's', 'p', 'P', '*', 'h', 'H', '+', 'x',
+                   'X', 'd', 'D', '|', '_']
     for index_in_range in range(0, max_index):
         XT = I_XT_array[index_in_range, :]
         TY = I_TY_array[index_in_range, :]
@@ -65,8 +67,8 @@ def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_
         #                                 linewidth=2.1,
         #                                 color='g',zorder=10)
         # else:
-        axes[index_i, index_j].plot(XT[:], TY[:], marker='o', linestyle='-', markersize=12, markeredgewidth=0.01,
-                                    linewidth=0.2, color=colors[int(epochsInds[index_in_range])])
+        axes[index_i, index_j].plot(XT[:], TY[:], marker='o', linestyle='-', markersize=12,
+                                    markeredgewidth=0.01, linewidth=0.2, color=colors[int(epochsInds[index_in_range])])
     utils.adjustAxes(axes[index_i, index_j], axis_font=axis_font, title_str=title_str, x_ticks=x_ticks,
                      y_ticks=y_ticks, x_lim=[0, 25.1], y_lim=None,
                      set_xlabel=index_i == axes.shape[0] - 1, set_ylabel=index_j == 0, x_label='$I(X;T)$',
@@ -77,7 +79,7 @@ def plot_all_epochs(I_XT_array, I_TY_array, axes, epochsInds, f, index_i, index_
         if epochFlag:
             utils.create_color_bar(f, cmap, colorbar_axis, bar_font, np.sort(epochsInds), title='Epochs')
         else:
-            utils.create_color_bar(f, cmap, colorbar_axis, bar_font, np.sort(epochsInds)[::-1], title='Traces')
+            utils.create_color_bar(f, cmap, colorbar_axis, bar_font, np.sort(epochsInds)[::-1], title='Validation Traces')
         f.savefig(save_name+'.png', dpi=500, format='png')
 
 

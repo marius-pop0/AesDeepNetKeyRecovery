@@ -5,6 +5,7 @@ import argparse
 import ast
 import os
 import copy
+import h5py
 
 from keras import backend as K
 from keras.models import Model
@@ -133,13 +134,13 @@ def key_rank(model, inout_test, traces_test, kByte, trueKey):
 
     for i, v in enumerate(inout_test):
         for kh in range(0, 256):
-            hemw = hw[AES_Sbox[bytes.fromhex(v)[kByte] ^ kh]]
+            hemw = hw[AES_Sbox[v ^ kh]]
             prob_vector[kh] += p[i][hemw]
         df = pd.DataFrame({'prob': prob_vector})
         df = df.sort_values(['prob'], ascending=False)
         df = df.reset_index()
         df.rename(columns={'index': 'keyH'}, inplace=True)
-        rank[i] = df[df.keyH == int(trueKey, 16)].index.tolist()[0]
+        rank[i] = df[df.keyH == trueKey].index.tolist()[0]
     return rank
 
 
@@ -153,7 +154,7 @@ def plot_key_rank(keypred, byte, file_name, traces):
     plt.xticks(np.arange(0, traces+1, step=traces/10))
     plt.legend()
     plt.title("CNN")
-    plt.savefig('{}{}({}).png'.format(file_name, byte, key[0][2 * byte:2 * byte + 2]), dpi=500, format='png')
+    plt.savefig('{}{}({}).png'.format(file_name, byte, key[0]), dpi=500, format='png')
 
 
 def _evaluate(modl: Model, nodes_to_evaluate, x, y=None):
@@ -211,20 +212,21 @@ def create_model_cnn(architecture, classes=9, number_samples=200):
         if i != dense_layers:
             for j, c in enumerate(a):
                 if first:
-                    x = Conv1D(filters=c, kernel_size=3, strides=3, activation='relu', padding='valid',
-                               name='block{}_conv{}'.format(i,j))(trace_input)
+                    x = Conv1D(filters=c, kernel_size=11, strides=11, activation='relu', padding='same',
+                               name='block{}_conv{}'.format(i, j))(trace_input)
                     first = False
                 else:
-                    x = Conv1D(filters=c, kernel_size=3, strides=3, activation='relu', padding='valid',
+                    x = Conv1D(filters=c, kernel_size=11, strides=11, activation='relu', padding='same',
                                name='block{}_conv{}'.format(i, j))(x)
-            x = MaxPooling1D(pool_size=2, strides=2, padding='same', name='block{}_pool'.format(i))(x)
+            x = AveragePooling1D(pool_size=2, strides=2, padding='same', name='block{}_pool'.format(i))(x)
     x = Flatten(name='flatten')(x)
     for i, a in enumerate(architecture[dense_layers]):
-        x = Dense(a, activation='tanh', name='fc{}'.format(i))(x)
+        x = Dense(a, activation='relu', name='fc{}'.format(i))(x)
     x = Dense(classes, activation='softmax', name='predictions')(x)
     model = Model(trace_input, x, name='cnn')
     # optimizer = SGD(lr=0.001, decay=0, momentum=0.9, nesterov=True)
-    optimizer = Adam(lr=0.0004, decay=0)
+    # optimizer = Adam(lr=0.00001, decay=0.000001)
+    optimizer = RMSprop(lr=0.00001, decay=0.000001)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
@@ -239,27 +241,10 @@ def create_model_mlp(architecture, classes=9, number_samples=200):
     x = Dense(classes, activation='softmax', name='predictions')(x)
     model = Model(trace_input, x, name='mlp_sgd')
     # optimizer = SGD(lr=0.001, decay=0, momentum=0.9, nesterov=True)
-    optimizer = Adam(lr=0.0004, decay=0)
+    # optimizer = Adam(lr=0.0001, decay=0.000001)
+    optimizer = RMSprop(lr=0.00001, decay=0.000001)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
-
-
-# 1 Conv 2 Dense Layers with RMSprop optimizer - CnnBest Benadjila et al.
-def create_model_ascad(classes=9, number_samples=200):
-    input_shape = (number_samples, 1)
-    trace_input = Input(shape=input_shape)
-    x = Conv1D(filters=64, kernel_size=10, strides=10, activation='relu', padding='same', name='block1_conv1')(
-        trace_input)
-    x = AveragePooling1D(pool_size=2, strides=2, padding='same', name='block1_pool')(x)
-    x = Flatten(name='flatten')(x)
-    x = Dense(4096, activation='tanh', name='fc1')(x)
-    x = Dense(4096, activation='tanh', name='fc2')(x)
-    x = Dense(classes, activation='softmax', name='predictions')(x)
-    model = Model(trace_input, x, name='cnn_RMSprop')
-    optimizer = RMSprop(lr=0.00001, decay=0)
-    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    return model
-
 
 if __name__ == '__main__':
 
@@ -275,197 +260,188 @@ if __name__ == '__main__':
     parser.add_argument('-rl', help='Random Labels', type=bool, default=False)
     args = parser.parse_args()
 
-    assert len(K.tensorflow_backend._get_available_gpus()) > 0
+    # assert len(K.tensorflow_backend._get_available_gpus()) > 0
 
     out_dir = '{}/net:{}_{}_epoch:{}_trainingSize:{}/'.format(os.getcwd(), args.n, args.a, args.e, args.ts)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
-    trainset = 'datasets/SmartCardAES/AES_trainset.csv'
+    # trainset = 'datasets/SmartCardAES/AES_trainset.csv'
     # trainset = 'datasets/SmartCardAES/AES_trainset_sim.csv'
     # trainset = '/home/nfs/mpop/Documents/SmartCardAES/AES_trainset.csv'
-    testset = 'datasets/SmartCardAES/AES_testset.csv'
+    # trainset = 'datasets/Sasebo/trace4.csv'
+    # testset = 'datasets/SmartCardAES/AES_testset.csv'
     # testset = 'datasets/SmartCardAES/AES_testset_sim.csv'
     # testset = '/home/nfs/mpop/Documents/SmartCardAES/AES_testset.csv'
+    # testset = 'datasets/Sasebo/trace2.csv'
+    h5 = h5py.File('datasets/ASCAD/ASCAD_data/ASCAD_databases/ASCAD.h5', 'r')
 
-    if 'dataset' not in locals():
-        dataset = load_traces(trainset, 1, 1654, args.ts)
+    train_data = h5['Profiling_traces']
+    test_data = h5['Attack_traces']
+    inputoutput_train = train_data['metadata']['plaintext'][:, 2]
+    inputoutput_test = test_data['metadata']['plaintext'][:, 2]
+    key = train_data['metadata']['key'][:, 2]
+    traces_train = train_data['traces'][:]
+    traces_test = test_data['traces'][:]
+    labels_train = list(map(lambda x: hw[x], train_data['labels'][:]))
+    labels_test = list(map(lambda x: hw[x], test_data['labels'][:]))
+    dataset = traces_train, inputoutput_train, key, labels_train
+    dataset_test = traces_test, inputoutput_test, key, labels_test
+    # dataset = statcorrect_traces(dataset)
+    # dataset_test = statcorrect_traces(dataset_test)
+    # if 'dataset' not in locals():
+        # dataset = load_traces(trainset, 1, 1616, args.ts)
+        # dataset = load_traces(trainset, 1, 1654, args.ts)
         # dataset = load_traces(trainset, 1, 16, 10000)
-        dataset = statcorrect_traces(dataset)
 
-        dataset_test = load_traces(testset, 1, 1654, args.vs)
+
+        # dataset_test = load_traces(testset, 1, 1616, args.vs)
+        # dataset_test = load_traces(testset, 1, 1654, args.vs)
         # dataset_test = load_traces(testset, 1, 16, 2000)
-        dataset_test = statcorrect_traces(dataset_test)
-
-        mutual_info = []
-        for r_nr in range(args.r):
-            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + args.k)  # Template - Use known SubKey byte
-            # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 19 + i)  # Template - Use known SubKey byte
-            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + args.k)
-            # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 19 + i)
-
-            traces_train, inputoutput_train, _, labels_train = dataset_keyh
-            traces_test, inputoutput_test, key, labels_test = dataset_test_core
-
-            print("<------------------Attacking Byte: {} Iteration: {}------------------>".format(args.k, r_nr))
-            classes = 9
-            if args.rl:
-                labels_train = np.random.randint(classes, size=labels_train.shape[0])
-
-            traces_train_reshaped = traces_train.reshape((traces_train.shape[0], traces_train.shape[1], 1))
-            labels_train_categorical = to_categorical(labels_train, num_classes=classes)
-            traces_test_reshaped = traces_test.reshape((traces_test.shape[0], traces_test.shape[1], 1))
-            labels_test_categorical = to_categorical(labels_test, num_classes=classes)
-
-            save_model = ModelCheckpoint(out_dir+'model_epoch{epoch}.h5', period=1000)
 
 
-            class CalculateRecall(Callback):
-                def __init__(self, data, labels, message_prefix=None):
-                    self.data = data
-                    self.labels = labels
-                    self.message_prefix = message_prefix + ' ' or ''
-
-                def on_epoch_end(self, epoch, logs=None):
-                    logs = logs or {}
-                    predictions = self.model.predict(self.data)
-                    correctly_classified = (np.argmax(predictions, axis=1) == self.labels)
-                    _sum = 0.
-                    for i in np.unique(self.labels):
-                        n_correct = len(np.nonzero(correctly_classified[np.where(self.labels == i)[0]])[0])
-                        n_total = len(np.where(self.labels == i)[0])
-                        _sum += n_correct / n_total
-                    recall = _sum / len(np.unique(self.labels))
-                    print(self.message_prefix + 'recall:', recall)
-
-
-            class CalculateMut(Callback):
-                def __init__(self, calcEpoch, x):
-                    self.calcEpoch = calcEpoch
-                    self.x = x
-                    self.idx = 0
-                    self.mut = []
-
-                def on_epoch_end(self, epoch, logs=None):
-                    if epoch == self.calcEpoch[self.idx]:
-                        print("Getting Activations...")
-                        ws = get_activations(self.model, self.validation_data[0], self.validation_data[1])
-                        self.mut.append(
-                            get_information(ws, self.x, self.validation_data[1], 30, 50, calc_parallel=True))
-                        if self.idx < len(self.calcEpoch) - 1:
-                            self.idx += 1
-
-
-            class CalculateLayerStat(Callback):
-                def __init__(self, calcEpoch):
-                    self.ave = []
-                    self.std = []
-                    self.idx = 0
-                    self.calcEpoch = calcEpoch
-
-                def on_epoch_end(self, epoch, logs=None):
-                    if epoch == self.calcEpoch[self.idx]:
-                        ave = np.zeros(len(self.model.layers))
-                        std = np.zeros(len(self.model.layers))
-                        for l, layer in enumerate(self.model.layers):
-                            # Should calc only for dense layers... Chose l dynamically?
-                            if 'fc' in layer.name or 'predictions' in layer.name:
-                                w = layer.get_weights()
-                                ave[l] = np.average(w[1])
-                                std[l] = np.std(w[1])
-                        self.ave.append(ave)
-                        self.std.append(std)
-                        if self.idx < len(self.calcEpoch) - 1:
-                            self.idx += 1
-
-
-            class CalculateKeyRank(Callback):
-                def __init__(self, calcEpoch, testTraces, inout_test):
-                    self.idx = 0
-                    self.testTraces = testTraces
-                    self.inout_test = inout_test
-                    self.calcEpoch = calcEpoch
-                    self.epochTraceRank = []
-
-                def on_epoch_end(self, epoch, logs=None):
-                    if epoch == self.calcEpoch[self.idx]:
-                        # Choose random batch of test traces + inputData to calculate rank
-                        idx = np.random.randint(self.validation_data[0].shape[0], size=self.testTraces)
-                        p = self.model.predict(self.validation_data[0][idx, :])
-                        in_p = self.inout_test[idx]
-
-                        rank = np.zeros(in_p.shape[0])
-                        prob_vector = np.zeros(256)
-
-                        for i, v in enumerate(in_p):
-                            for kh in range(0, 256):
-                                hemw = hw[AES_Sbox[bytes.fromhex(v)[0] ^ kh]]
-                                prob_vector[kh] += p[i][hemw]
-                            df = pd.DataFrame({'prob': prob_vector})
-                            df = df.sort_values(['prob'], ascending=False)
-                            df = df.reset_index()
-                            df.rename(columns={'index': 'keyH'}, inplace=True)
-                            rank[i] = df[df.keyH == int('de', 16)].index.tolist()[0]
-
-                        if rank[-1] > 0:
-                            self.epochTraceRank.append(self.testTraces)
-                        else:
-                            rev_rank = rank[::-1]
-                            for i, v in enumerate(rev_rank):
-                                if v > 0:
-                                    self.epochTraceRank.append(self.testTraces-i)
-                                    break
-
-                        if self.idx < len(self.calcEpoch) - 1:
-                            self.idx += 1
-
-
-            epoch_max = args.e
-            num_of_samples = args.ms
-            important_epoch = np.unique(
-                np.logspace(np.log2(1), np.log2(epoch_max), num_of_samples, dtype=int, base=2)) - 1
-            calculate_recall_train = CalculateRecall(traces_train_reshaped, labels_train, 'train')
-            calculate_recall_test = CalculateRecall(traces_test_reshaped, labels_test, 'test')
-            calculate_mut_test = CalculateMut(important_epoch, traces_test)
-            calculate_layerStat = CalculateLayerStat(important_epoch)
-            calculate_keyRaks = CalculateKeyRank(important_epoch, args.vs, inputoutput_test)
-
-            callbacks = [calculate_recall_train, calculate_recall_test, save_model, calculate_mut_test,
-                         calculate_layerStat, calculate_keyRaks]
-
-            if args.n == 'cnn':
-                print("Building CNN Network")
-                model = create_model_cnn(args.a, classes=classes, number_samples=traces_train.shape[1])
-            else:
-                print("Building MLP Network")
-                model = create_model_mlp(args.a, classes=classes, number_samples=traces_train.shape[1])
-
-            history = model.fit(x=traces_train_reshaped,
-                                y=labels_train_categorical,
-                                batch_size=512,
-                                verbose=0,
-                                epochs=epoch_max,
-                                validation_data=(traces_test_reshaped, labels_test_categorical),
-                                callbacks=callbacks)
-
-            mutual_info.append(callbacks[3].mut)
-
-        print("Saving Trained Model...")
-        model.save(out_dir + "model.h5")
-        dump(history, out_dir + 'modelHistory.gz', compress=3)
-        plot_loss_acc(history.history['val_loss'], history.history['val_acc'], out_dir)
-
-        print("Saving Mutual Info Values...")
-        dump(mutual_info, out_dir + 'MutualInfo.gz', compress=3)
-        plot_mut(calc_ave_mut(mutual_info), important_epoch, out_dir + 'mutualInfo', True)
-
-        print("Determining Correct Key Ranking...")
-        key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, args.k, key[0][2*args.k: 2*args.k+2])
-        plot_key_rank(pd.DataFrame(key_prediction), args.k, out_dir + 'keyRank', args.vs)
-
-        print("Saving Layer Weight Data...")
-        dump(callbacks[3], out_dir + 'weights.gz', compress=3)
-        plot_weights_ave_std(callbacks[4].ave, callbacks[4].std, important_epoch, out_dir)
-
-        dump(callbacks[5].epochTraceRank, 'epochRanks.gz', compress=3)
-        plot_mut(calc_ave_mut(mutual_info), callbacks[5].epochTraceRank, out_dir + 'mutualInfoRanks', False)
+    mutual_info = []
+    for r_nr in range(args.r):
+        # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + args.k)  # Template - Use known SubKey byte
+        # dataset_keyh = create_labels_sboxinputkey(dataset, trainset,
+                                                  # 1619 + args.k)  # Template - Use known SubKey byte
+        # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 19 + i)  # Template - Use known SubKey byte
+        # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + args.k)
+        # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1619 + args.k)
+        # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 19 + i)
+        traces_train, inputoutput_train, _, labels_train = dataset
+        traces_test, inputoutput_test, key, labels_test = dataset_test
+        print("<------------------Attacking Byte: {} Iteration: {}------------------>".format(args.k, r_nr))
+        classes = 9
+        if args.rl:
+            labels_train = np.random.randint(classes, size=labels_train.shape[0])
+        traces_train_reshaped = traces_train.reshape((traces_train.shape[0], traces_train.shape[1], 1))
+        labels_train_categorical = to_categorical(labels_train, num_classes=classes)
+        traces_test_reshaped = traces_test.reshape((traces_test.shape[0], traces_test.shape[1], 1))
+        labels_test_categorical = to_categorical(labels_test, num_classes=classes)
+        save_model = ModelCheckpoint(out_dir+'model_epoch{epoch}.h5', period=1000)
+        class CalculateRecall(Callback):
+            def __init__(self, data, labels, message_prefix=None):
+                self.data = data
+                self.labels = labels
+                self.message_prefix = message_prefix + ' ' or ''
+            def on_epoch_end(self, epoch, logs=None):
+                logs = logs or {}
+                predictions = self.model.predict(self.data)
+                correctly_classified = (np.argmax(predictions, axis=1) == self.labels)
+                _sum = 0.
+                for i in np.unique(self.labels):
+                    n_correct = len(np.nonzero(correctly_classified[np.where(self.labels == i)[0]])[0])
+                    n_total = len(np.where(self.labels == i)[0])
+                    _sum += n_correct / n_total
+                recall = _sum / len(np.unique(self.labels))
+                print(self.message_prefix + 'recall:', recall)
+        class CalculateMut(Callback):
+            def __init__(self, calcEpoch, x):
+                self.calcEpoch = calcEpoch
+                self.x = x
+                self.idx = 0
+                self.mut = []
+            def on_epoch_end(self, epoch, logs=None):
+                if epoch == self.calcEpoch[self.idx]:
+                    print("Getting Activations...")
+                    ws = get_activations(self.model, self.validation_data[0], self.validation_data[1])
+                    self.mut.append(
+                        get_information(ws, self.x, self.validation_data[1], 30, 50, calc_parallel=True))
+                    if self.idx < len(self.calcEpoch) - 1:
+                        self.idx += 1
+        class CalculateLayerStat(Callback):
+            def __init__(self, calcEpoch):
+                self.ave = []
+                self.std = []
+                self.idx = 0
+                self.calcEpoch = calcEpoch
+            def on_epoch_end(self, epoch, logs=None):
+                if epoch == self.calcEpoch[self.idx]:
+                    ave = np.zeros(len(self.model.layers))
+                    std = np.zeros(len(self.model.layers))
+                    for l, layer in enumerate(self.model.layers):
+                        # Should calc only for dense layers... Chose l dynamically?
+                        if 'fc' in layer.name or 'predictions' in layer.name:
+                            w = layer.get_weights()
+                            ave[l] = np.average(w[1])
+                            std[l] = np.std(w[1])
+                    self.ave.append(ave)
+                    self.std.append(std)
+                    if self.idx < len(self.calcEpoch) - 1:
+                        self.idx += 1
+        class CalculateKeyRank(Callback):
+            def __init__(self, calcEpoch, testTraces, inout_test, realKey):
+                self.idx = 0
+                self.testTraces = testTraces
+                self.inout_test = inout_test
+                self.calcEpoch = calcEpoch
+                self.epochTraceRank = []
+                self.realKey = realKey
+            def on_epoch_end(self, epoch, logs=None):
+                if epoch == self.calcEpoch[self.idx]:
+                    # Choose random batch of test traces + inputData to calculate rank
+                    idx = np.random.randint(self.validation_data[0].shape[0], size=self.testTraces)
+                    p = self.model.predict(self.validation_data[0][idx, :])
+                    in_p = self.inout_test[idx]
+                    rank = np.zeros(in_p.shape[0])
+                    prob_vector = np.zeros(256)
+                    for i, v in enumerate(in_p):
+                        for kh in range(0, 256):
+                            hemw = hw[AES_Sbox[v ^ kh]]
+                            prob_vector[kh] += p[i][hemw]
+                        df = pd.DataFrame({'prob': prob_vector})
+                        df = df.sort_values(['prob'], ascending=False)
+                        df = df.reset_index()
+                        df.rename(columns={'index': 'keyH'}, inplace=True)
+                        rank[i] = df[df.keyH == self.realKey].index.tolist()[0]
+                    if rank[-1] > 0:
+                        self.epochTraceRank.append(self.testTraces)
+                    else:
+                        rev_rank = rank[::-1]
+                        for i, v in enumerate(rev_rank):
+                            if v > 0:
+                                self.epochTraceRank.append(self.testTraces-i)
+                                break
+                    if self.idx < len(self.calcEpoch) - 1:
+                        self.idx += 1
+        epoch_max = args.e
+        num_of_samples = args.ms
+        important_epoch = np.unique(
+            np.logspace(np.log2(1), np.log2(epoch_max), num_of_samples, dtype=int, base=2)) - 1
+        calculate_recall_train = CalculateRecall(traces_train_reshaped, labels_train, 'train')
+        calculate_recall_test = CalculateRecall(traces_test_reshaped, labels_test, 'test')
+        calculate_mut_test = CalculateMut(important_epoch, traces_test)
+        calculate_layerStat = CalculateLayerStat(important_epoch)
+        calculate_keyRaks = CalculateKeyRank(important_epoch, args.vs, inputoutput_test, key[0])
+        callbacks = [calculate_recall_train, calculate_recall_test, save_model, calculate_mut_test,
+                     calculate_layerStat, calculate_keyRaks]
+        if args.n == 'cnn':
+            print("Building CNN Network")
+            model = create_model_cnn(args.a, classes=classes, number_samples=traces_train.shape[1])
+        else:
+            print("Building MLP Network")
+            model = create_model_mlp(args.a, classes=classes, number_samples=traces_train.shape[1])
+        history = model.fit(x=traces_train_reshaped,
+                            y=labels_train_categorical,
+                            batch_size=512,
+                            verbose=0,
+                            epochs=epoch_max,
+                            validation_data=(traces_test_reshaped, labels_test_categorical),
+                            callbacks=callbacks)
+        mutual_info.append(callbacks[3].mut)
+    print("Saving Trained Model...")
+    model.save(out_dir + "model.h5")
+    dump(history, out_dir + 'modelHistory.gz', compress=3)
+    plot_loss_acc(history.history['val_loss'], history.history['val_acc'], out_dir)
+    print("Saving Mutual Info Values...")
+    dump(mutual_info, out_dir + 'MutualInfo.gz', compress=3)
+    plot_mut(calc_ave_mut(mutual_info), important_epoch, out_dir + 'mutualInfo', True)
+    print("Determining Correct Key Ranking...")
+    key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, args.k, key[0])
+    plot_key_rank(pd.DataFrame(key_prediction), args.k, out_dir + 'keyRank', args.vs)
+    print("Saving Layer Weight Data...")
+    dump(callbacks[3], out_dir + 'weights.gz', compress=3)
+    plot_weights_ave_std(callbacks[4].ave, callbacks[4].std, important_epoch, out_dir)
+    dump(callbacks[5].epochTraceRank, 'epochRanks.gz', compress=3)
+    plot_mut(calc_ave_mut(mutual_info), callbacks[5].epochTraceRank, out_dir + 'mutualInfoRanks', False)
 
