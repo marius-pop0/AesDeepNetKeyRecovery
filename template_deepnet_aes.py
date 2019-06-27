@@ -171,6 +171,20 @@ def get_activations(model, x, y, layer_name=None):
     activations = _evaluate(model, layer_outputs, x, y)
     return activations
 
+
+def _get_gradients(model, x, y, nodes, nodes_names):
+    if model.optimizer is None:
+        raise Exception('Please compile the model first. The loss function is required to compute the gradients.')
+    grads = model.optimizer.get_gradients(model.total_loss, nodes)
+    gradients_values = _evaluate(model, grads, x, y)
+    result = dict(zip(nodes_names, gradients_values))
+    return result
+
+def get_gradients_of_activations(model, x, y, layer_name=None):
+    nodes = [layer.output for layer in model.layers if layer.name == layer_name or layer_name is None]
+    nodes_names = [n.name for n in nodes]
+    return _get_gradients(model, x, y, nodes, nodes_names)
+
 def calc_ave_mut(mut):
     mut_ave = copy.deepcopy(mut[0])
     for e in range(len(mut[0])):
@@ -184,6 +198,7 @@ def calc_ave_mut(mut):
             mut_ave[e][i][0]['local_IXT'] = ave_IXT / args.r
             mut_ave[e][i][0]['local_ITY'] = ave_ITY / args.r
     return mut_ave
+
 
 def plot_mut(mut, important_epoch, file_name, epochFlag):
     print("Plotting Mutual Info...")
@@ -200,6 +215,59 @@ def plot_mut(mut, important_epoch, file_name, epochFlag):
     plot_all_epochs(I_XT_array, I_TY_array, axes, important_epoch, f, 0, 0, I_XT_array.shape[0], font_size, y_ticks,
                     x_ticks, colorbar_axis, "Mutual Info", axis_font, bar_font, file_name, epochFlag)
 
+
+def plot_valTraceVsEpoch(valTraces, important_epoch, dir):
+    print("Plotting ValTraces vs Rank when Guessing Entropy = 0...")
+    fig = plt.figure(figsize=(12, 9))
+    pl = fig.add_subplot(111)
+    pl.plot(important_epoch, valTraces)
+    pl.set_title("Guessing Entropy = 0 - Evolution during Training", fontsize='large')
+    pl.set_xlabel('Epoch')
+    pl.set_ylabel('# Validation Traces')
+    plt.ylim(ymin=1)
+    plt.xlim(xmin=0)
+    plt.savefig('{}epochVsvalTraceGE0.png'.format(dir), dpi=500, format='png')
+
+
+def plot_rankVsITY(rank, mut, dir):
+    print("Plotting Mutual Info vs Rank..")
+    I_TY_array = np.array(extract_array(mut, 'local_ITY'))
+    fig = plt.figure(figsize=(12, 9))
+    pl = fig.add_subplot(111)
+    pl.plot(rank, I_TY_array[:,-1])
+    pl.set_title("Final Hidden Layer Mutual Information Vs. Rank", fontsize='large')
+    pl.set_xlabel('Rank')
+    pl.set_ylabel('ITY of Final Hidden Layer')
+    plt.ylim(ymin=0)
+    plt.xlim(xmin=0)
+    plt.savefig('{}rankVsITY.png'.format(dir), dpi=500, format='png')
+
+
+def plot_epochVsITY(important_epoch, mut, dir):
+    print("Plotting Mutual Info vs Epoch...")
+    I_TY_array = np.array(extract_array(mut, 'local_ITY'))
+    fig = plt.figure(figsize=(12, 9))
+    pl = fig.add_subplot(111)
+    pl.plot(important_epoch, I_TY_array[:,-1])
+    pl.set_title("Final Hidden Layer Mutual Information Vs. Epoch", fontsize='large')
+    pl.set_xlabel('Epoch')
+    pl.set_ylabel('ITY of Final Hidden Layer')
+    plt.ylim(ymin=0)
+    plt.xlim(xmin=0)
+    plt.savefig('{}epochVsITY.png'.format(dir), dpi=500, format='png')
+
+
+def plot_epochVsKKCInputGradCorr(important_epoch, corr, dir):
+    print("Plotting Input Correlation")
+    fig = plt.figure(figsize=(12, 9))
+    pl = fig.add_subplot(111)
+    pl.plot(important_epoch, np.abs(corr))
+    pl.set_title("Epoch Vs Pearson Correlation Between Known Key Correlation and NN Input Gradients", fontsize='large')
+    pl.set_xlabel('Epoch')
+    pl.set_ylabel('Pearson Correlation Between Known Key Correlation and NN Input Gradients')
+    plt.ylim(ymin=0)
+    plt.xlim(xmin=0)
+    plt.savefig('{}epochVsKkcNNig.png'.format(dir), dpi=500, format='png')
 
 # use for hamming weight leakage model
 def create_model_cnn(architecture, classes=9, number_samples=200):
@@ -275,33 +343,33 @@ if __name__ == '__main__':
     parser.add_argument('-rl', help='Random Labels', type=bool, default=False)
     args = parser.parse_args()
 
-    assert len(K.tensorflow_backend._get_available_gpus()) > 0
+    # assert len(K.tensorflow_backend._get_available_gpus()) > 0
 
     out_dir = '{}/net:{}_{}_epoch:{}_trainingSize:{}/'.format(os.getcwd(), args.n, args.a, args.e, args.ts)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
-    trainset = 'datasets/SmartCardAES/AES_trainset.csv'
-    # trainset = 'datasets/SmartCardAES/AES_trainset_sim.csv'
+    # trainset = 'datasets/SmartCardAES/AES_trainset.csv'
+    trainset = 'datasets/SimulatedAES/traceTrain.csv'
     # trainset = '/home/nfs/mpop/Documents/SmartCardAES/AES_trainset.csv'
-    testset = 'datasets/SmartCardAES/AES_testset.csv'
-    # testset = 'datasets/SmartCardAES/AES_testset_sim.csv'
+    # testset = 'datasets/SmartCardAES/AES_testset.csv'
+    testset = 'datasets/SimulatedAES/traceTest.csv'
     # testset = '/home/nfs/mpop/Documents/SmartCardAES/AES_testset.csv'
 
     if 'dataset' not in locals():
-        dataset = load_traces(trainset, 1, 1654, args.ts)
-        # dataset = load_traces(trainset, 1, 16, 10000)
+        # dataset = load_traces(trainset, 1, 1654, args.ts)
+        dataset = load_traces(trainset, 1, 216, args.ts)
         dataset = statcorrect_traces(dataset)
 
-        dataset_test = load_traces(testset, 1, 1654, args.vs)
-        # dataset_test = load_traces(testset, 1, 16, 2000)
+        # dataset_test = load_traces(testset, 1, 1654, args.vs)
+        dataset_test = load_traces(testset, 1, 216, args.vs)
         dataset_test = statcorrect_traces(dataset_test)
 
         mutual_info = []
         for r_nr in range(args.r):
-            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + args.k)  # Template - Use known SubKey byte
-            # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 19 + i)  # Template - Use known SubKey byte
-            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + args.k)
-            # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 19 + i)
+            # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + args.k)  # Template - Use known SubKey byte
+            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 219 + args.k)
+            # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + args.k)
+            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 219 + args.k)
 
             traces_train, inputoutput_train, _, labels_train = dataset_keyh
             traces_test, inputoutput_test, key, labels_test = dataset_test_core
@@ -355,6 +423,23 @@ if __name__ == '__main__':
                             self.idx += 1
 
 
+            class CalculateInputGrads(Callback):
+                def __init__(self, calcEpoch):
+                    self.calcEpoch = calcEpoch
+                    self.idx = 0
+                    self.grad = []
+
+                def on_epoch_end(self, epoch, logs=None):
+                    if epoch == self.calcEpoch[self.idx]:
+                        print("Getting Input Gradiants...")
+                        grads = get_gradients_of_activations(self.model, self.validation_data[0],
+                                                                      self.validation_data[1], layer_name='input_1')
+                        self.grad.append(np.sum(grads['input_1:0'], axis=0))
+
+                        if self.idx < len(self.calcEpoch) - 1:
+                            self.idx += 1
+
+
             class CalculateLayerStat(Callback):
                 def __init__(self, calcEpoch):
                     self.ave = []
@@ -385,6 +470,7 @@ if __name__ == '__main__':
                     self.inout_test = inout_test
                     self.calcEpoch = calcEpoch
                     self.epochTraceRank = []
+                    self.epochRank = []
 
                 def on_epoch_end(self, epoch, logs=None):
                     if epoch == self.calcEpoch[self.idx]:
@@ -398,14 +484,15 @@ if __name__ == '__main__':
 
                         for i, v in enumerate(in_p):
                             for kh in range(0, 256):
-                                hemw = hw[AES_Sbox[bytes.fromhex(v)[0] ^ kh]]
+                                hemw = hw[AES_Sbox[bytes.fromhex(v)[3] ^ kh]]
                                 prob_vector[kh] += p[i][hemw]
                             df = pd.DataFrame({'prob': prob_vector})
                             df = df.sort_values(['prob'], ascending=False)
                             df = df.reset_index()
                             df.rename(columns={'index': 'keyH'}, inplace=True)
-                            rank[i] = df[df.keyH == int('de', 16)].index.tolist()[0]
+                            rank[i] = df[df.keyH == int('ef', 16)].index.tolist()[0]
 
+                        self.epochRank.append(rank[-1]) #Rank After all Validation Traces
                         if rank[-1] > 0:
                             self.epochTraceRank.append(self.testTraces)
                         else:
@@ -428,9 +515,10 @@ if __name__ == '__main__':
             calculate_mut_test = CalculateMut(important_epoch, traces_test)
             calculate_layerStat = CalculateLayerStat(important_epoch)
             calculate_keyRaks = CalculateKeyRank(important_epoch, args.vs, inputoutput_test)
+            calculate_input_gradiants_test = CalculateInputGrads(important_epoch)
 
             callbacks = [calculate_recall_train, calculate_recall_test, save_model, calculate_mut_test,
-                         calculate_layerStat, calculate_keyRaks]
+                         calculate_layerStat, calculate_keyRaks, calculate_input_gradiants_test]
 
             if args.n == 'cnn':
                 print("Building CNN Network")
@@ -468,4 +556,17 @@ if __name__ == '__main__':
 
         dump(callbacks[5].epochTraceRank, 'epochRanks.gz', compress=3)
         plot_mut(calc_ave_mut(mutual_info), callbacks[5].epochTraceRank, out_dir + 'mutualInfoRanks', False)
+        plot_valTraceVsEpoch(callbacks[5].epochTraceRank, important_epoch, out_dir)
+        plot_rankVsITY(callbacks[5].epochRank, calc_ave_mut(mutual_info), out_dir)
+        plot_epochVsITY(important_epoch, calc_ave_mut(mutual_info), out_dir)
 
+        kkc = [-0.00291, 0.004495, 0.002856, 1, -0.00425, 1.52e-05, -0.00171, 0.00468, -0.00235, -0.003,
+               0.003033, 0.001692, 0.001393, -0.00337, -9.08e-04, 0.002221]
+        kkc = np.append(np.zeros((100,)), kkc)
+        kkc = np.append(kkc, np.zeros((100,)))
+        corr = []
+        for i in callbacks[6].grad:
+            tmp = pd.DataFrame([np.transpose(kkc), i[:, 0]]).T.corr()
+            corr.append(tmp[0][1])
+
+        plot_epochVsKKCInputGradCorr(important_epoch, corr, out_dir)
