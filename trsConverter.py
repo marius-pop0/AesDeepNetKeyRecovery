@@ -8,7 +8,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Convert trs files to CSV.')
 parser.add_argument('f', help="Input file .trs", type=str, nargs=1)
 parser.add_argument('a', help="Algorithm Used. AES or DES", type=str, nargs=1, choices=['AES', 'DES'], )
-parser.add_argument('-k', nargs=1, type=str, help=' Uniform Encryption Key supplied (key not in dataset)')
+parser.add_argument('-k', type=str, help=' Uniform Encryption Key supplied (key not in dataset)')
 
 args = parser.parse_args()
 DES: int = 0
@@ -64,8 +64,10 @@ with trsfile.open(filename, 'r') as traces:
         # print('Trace {0:d} contains {1:d} samples'.format(i, len(trace)))
         # print('  - minimum value in trace: {0:f}'.format(min(trace)))
         # print('  - maximum value in trace: {0:f}'.format(max(trace)))
-        df_traces = df_traces.append(pd.DataFrame([trace.samples]), ignore_index=True)
-
+        df_prepend = pd.DataFrame([np.random.randint(9, size=100)])
+        df_trace = pd.DataFrame([trace.samples])
+        df_append = pd.DataFrame([np.random.randint(9, size=100)])
+        df_trace = pd.concat([df_prepend,df_trace,df_append], axis=1, ignore_index=True)
         # Print Data
         # print(binascii.hexlify(trace.data).decode('utf8'))
         # print("Plaintext " + binascii.hexlify(trace.data).decode('utf8')[0:16])
@@ -136,8 +138,8 @@ with trsfile.open(filename, 'r') as traces:
             if args.k is None:
                 key = data[64:96]
             else:
-                if len(args.k[0]) == 32:
-                    key = args.k[0]
+                if len(args.k) == 32:
+                    key = args.k
                 else:
                     exit("Invalid Key Length for AES")
             # hemw = hw[AES_Sbox[bytes.fromhex(v)[kByte] ^ kh]]
@@ -175,46 +177,49 @@ with trsfile.open(filename, 'r') as traces:
             # # print("SboxHW:{}, SboxHD:{}, RoundHW:{}, RoundHD:{}".format(HW_r1_sbox, HD_r1_sbox))
             # # save the data to a data frame (Plaintext, Ciphertext, HW-Sbox, HD-Sbox)
             # # check if key is in trace or supplied
-            df_all = pd.DataFrame([[data[0:32], data[32:64]]])
+
+            df_leak = pd.DataFrame()
             if args.k is None:
-                df_all = pd.concat([df_all,pd.DataFrame([[data[64:96]]])], axis=1)
+                df_key = pd.DataFrame([[data[64:96]]])
+            else:
+                df_key = pd.DataFrame([args.k])
             for i in range(16):
-                df_all = pd.concat([df_all, pd.DataFrame([[HW_r1_sbox[i]]])], axis=1)
-
-            df_data = df_data.append(df_all)
-
-    df_data = df_data.reset_index(drop=True)
-    df_data.columns = range(df_data.shape[1])
-    # insert plaintext at the from of the dataframe
-    df_traces.insert(loc=0, column='pt', value=df_data[0])
-    df_traces['ct'] = df_data[1]
-
-    base_max_idx_aes = 18
-    base_max_idx_des = 10
-
-    if args.k is None:
-        df_traces['key'] = df_data[2]
-        idx = 3
-        base_max_idx_aes += 1
-        base_max_idx_des += 1
-    else:
-        df_traces['key'] = args.k[0]
-        idx = 2
-
-    b = 0
-    if ALG == AES:
-        while idx < base_max_idx_aes:
-            col = 'round1HW_SboxOut_b{}'.format(b)
-            df_traces[col] = df_data[idx]
-            idx += 1
-            b += 1
-
-    if ALG == DES:
-        while idx < base_max_idx_des:
-            col = 'round1HD_RoundOut_b{}'.format(b)
-            df_traces[col] = df_data[idx]
-            idx += 1
-            b += 1
+                df_leak = pd.concat([df_leak, pd.DataFrame([[HW_r1_sbox[i]]])], axis=1)
+            df_trace = pd.concat([pd.DataFrame([[data[0:32]]]), df_trace, pd.DataFrame([[data[32:64]]]),
+                                  df_key, df_leak], axis=1, ignore_index=True)
+            df_traces = df_traces.append(df_trace)
+    # df_data = df_data.reset_index(drop=True)
+    # df_data.columns = range(df_data.shape[1])
+    # # insert plaintext at the from of the dataframe
+    # df_traces.insert(loc=0, column='pt', value=df_data[0])
+    # df_traces['ct'] = df_data[1]
+    #
+    # base_max_idx_aes = 18
+    # base_max_idx_des = 10
+    #
+    # if args.k is None:
+    #     df_traces['key'] = df_data[2]
+    #     idx = 3
+    #     base_max_idx_aes += 1
+    #     base_max_idx_des += 1
+    # else:
+    #     df_traces['key'] = args.k
+    #     idx = 2
+    #
+    # b = 0
+    # if ALG == AES:
+    #     while idx < base_max_idx_aes:
+    #         col = 'round1HW_SboxOut_b{}'.format(b)
+    #         df_traces[col] = df_data[idx]
+    #         idx += 1
+    #         b += 1
+    #
+    # if ALG == DES:
+    #     while idx < base_max_idx_des:
+    #         col = 'round1HD_RoundOut_b{}'.format(b)
+    #         df_traces[col] = df_data[idx]
+    #         idx += 1
+    #         b += 1
 
     # Sort by column name
     # df_traces = df_traces.sort_values('round1_SboxOut')
@@ -222,6 +227,6 @@ with trsfile.open(filename, 'r') as traces:
     # print(df_traces.head())
 
     # Write to CSV file --> Takes a while to do for large traces
-    df_traces.to_csv("trace.csv", index=False)
+    df_traces.to_csv("traceTrain.csv", index=False)
 
     print("Conversion and Leakage Calculations Complete!")

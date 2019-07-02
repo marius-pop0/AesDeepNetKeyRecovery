@@ -97,14 +97,18 @@ def create_labels_sboxinputkey(dataset, database_file, col):
 def plot_loss_acc(loss, acc, dir):
     print("Plotting Loss and Accuracy...")
     fig = plt.figure(4)
-    ax = plt.subplot(111)
+    ax = fig.add_subplot(111)
     ax.plot(loss, label='Loss')
     plt.title("Network Loss")
+    ax.set_ylabel('Loss')
+    ax.set_xlabel('Epoch')
     ax.legend()
     plt.savefig('{}loss.png'.format(dir), dpi=500, format='png')
     fig = plt.figure(5)
-    ax = plt.subplot(111)
+    ax = fig.add_subplot(111)
     ax.plot(acc, label='Network Accuracy')
+    ax.set_ylabel('Accuracy')
+    ax.set_xlabel('Epoch')
     ax.legend()
     plt.savefig('{}accuracy.png'.format(dir), dpi=500, format='png')
 
@@ -234,7 +238,7 @@ def plot_rankVsITY(rank, mut, dir):
     I_TY_array = np.array(extract_array(mut, 'local_ITY'))
     fig = plt.figure(figsize=(12, 9))
     pl = fig.add_subplot(111)
-    pl.plot(rank, I_TY_array[:,-1])
+    pl.plot(rank, I_TY_array[:,-1], marker='o')
     pl.set_title("Final Hidden Layer Mutual Information Vs. Rank", fontsize='large')
     pl.set_xlabel('Rank')
     pl.set_ylabel('ITY of Final Hidden Layer')
@@ -248,7 +252,7 @@ def plot_epochVsITY(important_epoch, mut, dir):
     I_TY_array = np.array(extract_array(mut, 'local_ITY'))
     fig = plt.figure(figsize=(12, 9))
     pl = fig.add_subplot(111)
-    pl.plot(important_epoch, I_TY_array[:,-1])
+    pl.plot(important_epoch, I_TY_array[:, -1])
     pl.set_title("Final Hidden Layer Mutual Information Vs. Epoch", fontsize='large')
     pl.set_xlabel('Epoch')
     pl.set_ylabel('ITY of Final Hidden Layer')
@@ -348,28 +352,29 @@ if __name__ == '__main__':
     out_dir = '{}/net:{}_{}_epoch:{}_trainingSize:{}/'.format(os.getcwd(), args.n, args.a, args.e, args.ts)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
-    # trainset = 'datasets/SmartCardAES/AES_trainset.csv'
-    trainset = 'datasets/SimulatedAES/traceTrain.csv'
+    trainset = 'datasets/SmartCardAES/AES_trainset.csv'
+    # trainset = 'datasets/SimulatedAES/traceTrain.csv'
     # trainset = '/home/nfs/mpop/Documents/SmartCardAES/AES_trainset.csv'
-    # testset = 'datasets/SmartCardAES/AES_testset.csv'
-    testset = 'datasets/SimulatedAES/traceTest.csv'
+    testset = 'datasets/SmartCardAES/AES_testset.csv'
+    # testset = 'datasets/SimulatedAES/traceTest.csv'
     # testset = '/home/nfs/mpop/Documents/SmartCardAES/AES_testset.csv'
+    kkc = pd.read_csv('datasets/SmartCardAES/AES_testset_KKC.csv', delimiter='\t', header=None, usecols=[args.k]).values
 
     if 'dataset' not in locals():
-        # dataset = load_traces(trainset, 1, 1654, args.ts)
-        dataset = load_traces(trainset, 1, 216, args.ts)
+        dataset = load_traces(trainset, 1, 1654, args.ts)
+        # dataset = load_traces(trainset, 1, 216, args.ts)
         dataset = statcorrect_traces(dataset)
 
-        # dataset_test = load_traces(testset, 1, 1654, args.vs)
-        dataset_test = load_traces(testset, 1, 216, args.vs)
+        dataset_test = load_traces(testset, 1, 1654, args.vs)
+        # dataset_test = load_traces(testset, 1, 216, args.vs)
         dataset_test = statcorrect_traces(dataset_test)
 
         mutual_info = []
         for r_nr in range(args.r):
-            # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + args.k)  # Template - Use known SubKey byte
-            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 219 + args.k)
-            # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + args.k)
-            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 219 + args.k)
+            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + args.k)  # Template - Use known SubKey byte
+            # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 219 + args.k)
+            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + args.k)
+            # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 219 + args.k)
 
             traces_train, inputoutput_train, _, labels_train = dataset_keyh
             traces_test, inputoutput_test, key, labels_test = dataset_test_core
@@ -560,10 +565,10 @@ if __name__ == '__main__':
         plot_rankVsITY(callbacks[5].epochRank, calc_ave_mut(mutual_info), out_dir)
         plot_epochVsITY(important_epoch, calc_ave_mut(mutual_info), out_dir)
 
-        kkc = [-0.00291, 0.004495, 0.002856, 1, -0.00425, 1.52e-05, -0.00171, 0.00468, -0.00235, -0.003,
-               0.003033, 0.001692, 0.001393, -0.00337, -9.08e-04, 0.002221]
-        kkc = np.append(np.zeros((100,)), kkc)
-        kkc = np.append(kkc, np.zeros((100,)))
+        # kkc = [-0.00291, 0.004495, 0.002856, 1, -0.00425, 1.52e-05, -0.00171, 0.00468, -0.00235, -0.003,
+        #        0.003033, 0.001692, 0.001393, -0.00337, -9.08e-04, 0.002221]
+        # kkc = np.append(np.zeros((100,)), kkc)
+        # kkc = np.append(kkc, np.zeros((100,)))
         corr = []
         for i in callbacks[6].grad:
             tmp = pd.DataFrame([np.transpose(kkc), i[:, 0]]).T.corr()
