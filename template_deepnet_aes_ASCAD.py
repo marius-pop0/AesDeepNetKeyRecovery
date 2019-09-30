@@ -90,7 +90,7 @@ def add_noise(dataset, noiseLevel):
     elif len(dataset) == 4:
         traces, inputoutput, key, labels = dataset
 
-    noise = np.random.normal(0, np.std(traces) * noiseLevel, traces.shape)
+    noise = np.random.normal(0, noiseLevel, traces.shape)
     traces = traces + noise
 
     if len(dataset) == 3:
@@ -111,11 +111,12 @@ def create_labels_sboxinputkey(dataset, database_file, col):
     return traces, inputoutput, key, labels
 
 
-def plot_loss_acc(loss, acc_val, acc, dir):
+def plot_loss_acc(loss, acc, val_loss, val_acc, dir):
     print("Plotting Loss and Accuracy...")
     fig = plt.figure(4)
     ax = fig.add_subplot(111)
     ax.plot(loss, label='Loss')
+    ax.plot(val_loss, label='Validation Loss')
     plt.title("Network Loss")
     ax.set_ylabel('Loss')
     ax.set_xlabel('Epoch')
@@ -123,8 +124,9 @@ def plot_loss_acc(loss, acc_val, acc, dir):
     plt.savefig('{}loss.png'.format(dir), dpi=500, format='png')
     fig = plt.figure(5)
     ax = fig.add_subplot(111)
-    ax.plot(acc, label='Network Accuracy')
-    ax.plot(acc_val, label='Network Validation Accuracy')
+    ax.plot(acc, label='Accuracy')
+    ax.plot(acc, label='Validation Accuracy')
+    plt.title("Network Accuracy")
     ax.set_ylabel('Accuracy')
     ax.set_xlabel('Epoch')
     ax.legend()
@@ -155,13 +157,13 @@ def key_rank(model, inout_test, traces_test, kByte, trueKey):
 
     for i, v in enumerate(inout_test):
         for kh in range(0, 256):
-            hemw = hw[AES_Sbox[bytes.fromhex(v)[kByte] ^ kh]]
+            hemw = hw[AES_Sbox[v ^ kh]]
             prob_vector[kh] += p[i][hemw]
         df = pd.DataFrame({'prob': prob_vector})
         df = df.sort_values(['prob'], ascending=False)
         df = df.reset_index()
         df.rename(columns={'index': 'keyH'}, inplace=True)
-        rank[i] = df[df.keyH == int(trueKey, 16)].index.tolist()[0]
+        rank[i] = df[df.keyH == trueKey].index.tolist()[0]
     return rank
 
 
@@ -174,8 +176,8 @@ def plot_key_rank(keypred, byte, file_name, traces):
     plt.ylabel('Rank')
     plt.xticks(np.arange(0, traces+1, step=traces/10))
     plt.legend()
-    plt.title("Guessing Entropy")
-    plt.savefig('{}{}({}).png'.format(file_name, byte, key[0][2 * byte:2 * byte + 2]), dpi=500, format='png')
+    plt.title("Key Rank Byte {} - {}".format(byte, key[2]))
+    plt.savefig('{}{}({}).png'.format(file_name, byte, key[2]), dpi=500, format='png')
 
 
 def _evaluate(modl: Model, nodes_to_evaluate, x, y=None):
@@ -243,7 +245,7 @@ def plot_valTraceVsEpoch(valTraces, important_epoch, dir):
     fig = plt.figure(figsize=(12, 9))
     pl = fig.add_subplot(111)
     pl.plot(important_epoch, valTraces)
-    pl.set_title("Guessing Entropy = 0 \n Evolution during Training", fontsize='large')
+    pl.set_title("Guessing Entropy = 0 - Evolution during Training", fontsize='large')
     pl.set_xlabel('Epoch')
     pl.set_ylabel('# Validation Traces')
     plt.ylim(ymin=1)
@@ -252,11 +254,11 @@ def plot_valTraceVsEpoch(valTraces, important_epoch, dir):
 
 
 def plot_rankVsITY(rank, mut, dir):
-    print("Plotting Mutual Info vs Rank...")
+    print("Plotting Mutual Info vs Rank..")
     I_TY_array = np.array(extract_array(mut, 'local_ITY'))
     fig = plt.figure(figsize=(12, 9))
     pl = fig.add_subplot(111)
-    pl.scatter(rank, I_TY_array[:,-1], marker='o')
+    pl.plot(rank, I_TY_array[:,-1], marker='o')
     pl.set_title("Final Hidden Layer Mutual Information Vs. Rank", fontsize='large')
     pl.set_xlabel('Rank')
     pl.set_ylabel('ITY of Final Hidden Layer')
@@ -270,15 +272,12 @@ def plot_epochVsITY(important_epoch, mut, dir):
     I_TY_array = np.array(extract_array(mut, 'local_ITY'))
     fig = plt.figure(figsize=(12, 9))
     pl = fig.add_subplot(111)
-    for x in range(I_TY_array.shape[1]):
-        pl.plot(important_epoch, I_TY_array[:, x], label="Layer {}".format(x))
-    # pl.plot(important_epoch, I_TY_array[:, -1])
-    pl.set_title("Layer Mutual Information Vs. Epoch", fontsize='large')
+    pl.plot(important_epoch, I_TY_array[:, -1])
+    pl.set_title("Final Hidden Layer Mutual Information Vs. Epoch", fontsize='large')
     pl.set_xlabel('Epoch')
-    pl.set_ylabel('ITY of Layer')
+    pl.set_ylabel('ITY of Final Hidden Layer')
     plt.ylim(ymin=0)
     plt.xlim(xmin=0)
-    plt.legend()
     plt.savefig('{}epochVsITY.png'.format(dir), dpi=500, format='png')
 
 
@@ -287,13 +286,12 @@ def plot_epochVsKKCInputGradCorr(important_epoch, corr, dir):
     fig = plt.figure(figsize=(12, 9))
     pl = fig.add_subplot(111)
     pl.plot(important_epoch, np.abs(corr))
-    pl.set_title("Epoch Vs Pearson Correlation Between \nKnown Key Correlation and NN Input Gradients", fontsize='large')
+    pl.set_title("Epoch Vs Pearson Correlation Between Known Key Correlation and NN Input Gradients", fontsize='large')
     pl.set_xlabel('Epoch')
-    pl.set_ylabel('Pearson Correlation Between \nKnown Key Correlation and NN Input Gradients')
+    pl.set_ylabel('Pearson Correlation Between Known Key Correlation and NN Input Gradients')
     plt.ylim(ymin=0)
     plt.xlim(xmin=0)
     plt.savefig('{}epochVsKkcNNig.png'.format(dir), dpi=500, format='png')
-
 
 # use for hamming weight leakage model
 def create_model_cnn(architecture, classes=9, number_samples=200):
@@ -333,7 +331,7 @@ def create_model_mlp(architecture, classes=9, number_samples=200):
     x = Dense(classes, activation='softmax', name='predictions')(x)
     model = Model(trace_input, x, name='mlp_sgd')
     # optimizer = SGD(lr=0.001, decay=0, momentum=0.9, nesterov=True)
-    optimizer = Adam(lr=0.0004, decay=0)
+    optimizer = Adam(lr=0.005, decay=0)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
@@ -372,37 +370,56 @@ if __name__ == '__main__':
 
     # assert len(K.tensorflow_backend._get_available_gpus()) > 0
 
-    out_dir = '{}/net:{}_{}_epoch:{}_trainingSize:{}_noise{}/'.format(os.getcwd(), args.n, args.a, args.e, args.ts, args.ns)
+    out_dir = '/home/marius/Documents/Thesis/net:{}_{}_epoch:{}_trainingSize:{}/'.format(args.n, args.a, args.e, args.ts)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
     # trainset = 'datasets/SmartCardAES/AES_trainset.csv'
-    trainset = 'datasets/SimulatedAES/traceTrain.csv'
+    # trainset = 'datasets/SimulatedAES/traceTrain.csv'
     # trainset = '/home/nfs/mpop/Documents/SmartCardAES/AES_trainset.csv'
     # testset = 'datasets/SmartCardAES/AES_testset.csv'
-    testset = 'datasets/SimulatedAES/traceTest.csv'
+    # testset = 'datasets/SimulatedAES/traceTest.csv'
     # testset = '/home/nfs/mpop/Documents/SmartCardAES/AES_testset.csv'
-    # kkc = pd.read_csv('datasets/SmartCardAES/AES_testset_KKC.csv', delimiter='\t', header=None, usecols=[args.k]).values
+    # testset = 'datasets/Sasebo/trace2.csv'
+    h5 = h5py.File('/home/marius/Documents/Thesis/datasets/ASCAD/ASCAD_data/ASCAD_databases/ASCAD.h5', 'r')
+    kkc = pd.read_csv('/home/marius/Documents/Thesis/datasets/ASCAD/ASCAD_data/ASCAD_databases/ASCAD_kkc.csv', delimiter='\t', header=None).values
 
-    if 'dataset' not in locals():
+    train_data = h5['Profiling_traces']
+    test_data = h5['Attack_traces']
+    inputoutput_train = train_data['metadata']['plaintext'][:, 2]
+    inputoutput_test = test_data['metadata']['plaintext'][:, 2]
+    key = train_data['metadata']['key'][:, 2]
+    traces_train = train_data['traces'][:]
+    traces_test = test_data['traces'][:]
+    labels_train = list(map(lambda x: hw[x], train_data['labels'][:]))
+    labels_test = list(map(lambda x: hw[x], test_data['labels'][:]))
+    # labels_train = list(map(lambda x: x, train_data['labels'][:]))
+    # labels_test = list(map(lambda x: x, test_data['labels'][:]))
+    noise = np.random.normal(0, np.std(traces_train) * args.ns, traces_train.shape)
+    traces_train = traces_train + noise
+
+    dataset = traces_train, inputoutput_train, key, labels_train
+    dataset_test = traces_test, inputoutput_test, key, labels_test
+    # dataset = statcorrect_traces(dataset)
+    # dataset_test = statcorrect_traces(dataset_test)
+    if True:
+        # dataset = load_traces(trainset, 1, 1616, args.ts)
         # dataset = load_traces(trainset, 1, 1654, args.ts)
-        dataset = load_traces(trainset, 1, 216, args.ts)
-        dataset = statcorrect_traces(dataset)
-        dataset = add_noise(dataset, args.ns)
+        # dataset = load_traces(trainset, 1, 16, 10000)
 
+
+        # dataset_test = load_traces(testset, 1, 1616, args.vs)
         # dataset_test = load_traces(testset, 1, 1654, args.vs)
-        dataset_test = load_traces(testset, 1, 216, args.vs)
-        dataset_test = statcorrect_traces(dataset_test)
-        #dataset_test = add_noise(dataset_test, 2)
+        # dataset_test = load_traces(testset, 1, 16, 2000)
+
 
         mutual_info = []
         for r_nr in range(args.r):
             # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 1657 + args.k)  # Template - Use known SubKey byte
-            dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 219 + args.k)
+            # dataset_keyh = create_labels_sboxinputkey(dataset, trainset, 219 + args.k)
             # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 1657 + args.k)
-            dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 219 + args.k)
-
-            traces_train, inputoutput_train, _, labels_train = dataset_keyh
-            traces_test, inputoutput_test, key, labels_test = dataset_test_core
+            # dataset_test_core = create_labels_sboxinputkey(dataset_test, testset, 219 + args.k)
+            traces_train, inputoutput_train, _, labels_train = statcorrect_traces(dataset)
+            traces_test, inputoutput_test, key, labels_test = statcorrect_traces(dataset_test)
 
             print("<------------------Attacking Byte: {} Iteration: {}------------------>".format(args.k, r_nr))
             classes = 9
@@ -463,9 +480,8 @@ if __name__ == '__main__':
                     if epoch == self.calcEpoch[self.idx]:
                         print("Getting Input Gradiants...")
                         grads = get_gradients_of_activations(self.model, self.validation_data[0],
-                                                             self.validation_data[1],
-                                                             layer_name='input_{}'.format(r_nr + 1))
-                        self.grad.append(np.sum(grads['input_{}:0'.format(r_nr + 1)], axis=0))
+                                                             self.validation_data[1], layer_name='input_{}'.format(r_nr+1))
+                        self.grad.append(np.sum(grads['input_{}:0'.format(r_nr+1)], axis=0))
 
                         if self.idx < len(self.calcEpoch) - 1:
                             self.idx += 1
@@ -483,7 +499,6 @@ if __name__ == '__main__':
                         ave = np.zeros(len(self.model.layers))
                         std = np.zeros(len(self.model.layers))
                         for l, layer in enumerate(self.model.layers):
-                            # Should calc only for dense layers... Chose l dynamically?
                             if 'fc' in layer.name or 'predictions' in layer.name:
                                 w = layer.get_weights()
                                 ave[l] = np.average(w[1])
@@ -495,13 +510,14 @@ if __name__ == '__main__':
 
 
             class CalculateKeyRank(Callback):
-                def __init__(self, calcEpoch, testTraces, inout_test):
+                def __init__(self, calcEpoch, testTraces, inout_test, realKey):
                     self.idx = 0
                     self.testTraces = testTraces
                     self.inout_test = inout_test
                     self.calcEpoch = calcEpoch
                     self.epochTraceRank = []
                     self.epochRank = []
+                    self.realKey = realKey
 
                 def on_epoch_end(self, epoch, logs=None):
                     if epoch == self.calcEpoch[self.idx]:
@@ -515,13 +531,13 @@ if __name__ == '__main__':
 
                         for i, v in enumerate(in_p):
                             for kh in range(0, 256):
-                                hemw = hw[AES_Sbox[bytes.fromhex(v)[3] ^ kh]]
+                                hemw = hw[AES_Sbox[v ^ kh]]
                                 prob_vector[kh] += p[i][hemw]
                             df = pd.DataFrame({'prob': prob_vector})
                             df = df.sort_values(['prob'], ascending=False)
                             df = df.reset_index()
                             df.rename(columns={'index': 'keyH'}, inplace=True)
-                            rank[i] = df[df.keyH == int('ef', 16)].index.tolist()[0]
+                            rank[i] = df[df.keyH == self.realKey].index.tolist()[0]
 
                         self.epochRank.append(rank[-1]) #Rank After all Validation Traces
                         if rank[-1] > 0:
@@ -545,7 +561,7 @@ if __name__ == '__main__':
             calculate_recall_test = CalculateRecall(traces_test_reshaped, labels_test, 'test')
             calculate_mut_test = CalculateMut(important_epoch, traces_test)
             calculate_layerStat = CalculateLayerStat(important_epoch)
-            calculate_keyRaks = CalculateKeyRank(important_epoch, args.vs, inputoutput_test)
+            calculate_keyRaks = CalculateKeyRank(important_epoch, args.vs, inputoutput_test, key[0])
             calculate_input_gradiants_test = CalculateInputGrads(important_epoch)
 
             callbacks = [calculate_recall_train, calculate_recall_test, save_model, calculate_mut_test,
@@ -560,7 +576,7 @@ if __name__ == '__main__':
 
             history = model.fit(x=traces_train_reshaped,
                                 y=labels_train_categorical,
-                                batch_size=512,
+                                batch_size=256,
                                 verbose=0,
                                 epochs=epoch_max,
                                 validation_data=(traces_test_reshaped, labels_test_categorical),
@@ -568,41 +584,40 @@ if __name__ == '__main__':
 
             mutual_info.append(callbacks[3].mut)
 
-        plt.rcParams.update({'font.size': 14})
         print("Saving Trained Model...")
         model.save(out_dir + "model.h5")
         dump(history, out_dir + 'modelHistory.gz', compress=3)
-        plot_loss_acc(history.history['val_loss'], history.history['val_acc'], history.history['acc'], out_dir)
+        plot_loss_acc(history.history['loss'], history.history['acc'],history.history['val_loss'], history.history['val_acc'], out_dir)
 
         print("Saving Mutual Info Values...")
         dump(mutual_info, out_dir + 'MutualInfo.gz', compress=3)
         plot_mut(calc_ave_mut(mutual_info), important_epoch, out_dir + 'mutualInfo', True)
 
         print("Determining Correct Key Ranking...")
-        key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, args.k, key[0][2*args.k: 2*args.k+2])
+        key_prediction = key_rank(model, inputoutput_test, traces_test_reshaped, args.k, key[0])
         plot_key_rank(pd.DataFrame(key_prediction), args.k, out_dir + 'keyRank', args.vs)
 
         print("Saving Layer Weight Data...")
         dump(callbacks[3], out_dir + 'weights.gz', compress=3)
         plot_weights_ave_std(callbacks[4].ave, callbacks[4].std, important_epoch, out_dir)
 
-        dump(callbacks[5].epochTraceRank, out_dir + 'epochRanks.gz', compress=3)
+        dump(callbacks[5].epochTraceRank, 'epochRanks.gz', compress=3)
         plot_mut(calc_ave_mut(mutual_info), callbacks[5].epochTraceRank, out_dir + 'mutualInfoRanks', False)
         plot_valTraceVsEpoch(callbacks[5].epochTraceRank, important_epoch, out_dir)
         plot_rankVsITY(callbacks[5].epochRank, calc_ave_mut(mutual_info), out_dir)
         plot_epochVsITY(important_epoch, calc_ave_mut(mutual_info), out_dir)
 
-        kkc = [-0.00291, 0.004495, 0.002856, 1, -0.00425, 1.52e-05, -0.00171, 0.00468, -0.00235, -0.003,
-               0.003033, 0.001692, 0.001393, -0.00337, -9.08e-04, 0.002221]
-        kkc = np.append(np.zeros((100,)), kkc)
-        kkc = np.append(kkc, np.zeros((100,)))
         print("Saving Input Gradients...")
         h5f = h5py.File(out_dir + 'inputGradi.h5', 'w')
         h5f.create_dataset('Grads', data=callbacks[6].grad)
         h5f.close()
+        #kkc = [-0.00291, 0.004495, 0.002856, 1, -0.00425, 1.52e-05, -0.00171, 0.00468, -0.00235, -0.003,
+                # 0.003033, 0.001692, 0.001393, -0.00337, -9.08e-04, 0.002221]
+        # kkc = np.append(np.zeros((100,)), kkc)
+        # kkc = np.append(kkc, np.zeros((100,)))
         corr = []
         for i in callbacks[6].grad:
-            tmp = pearsonr(kkc, i[:, 0])
+            tmp = pearsonr(kkc[:,0], i[:,0])
             corr.append(tmp[0])
 
         plot_epochVsKKCInputGradCorr(important_epoch, corr, out_dir)
